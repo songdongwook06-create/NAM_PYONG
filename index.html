@@ -1,0 +1,624 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NAM_PYONG</title>
+  <style>
+    :root {
+      --bg: #101012;
+      --card: #1b1b1e;
+      --text: #f5f5f7;
+      --muted: #8e8e93;
+      --grid: #2b2b30;
+      --up: #ff4d5a;
+      --down: #4d9cff;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans KR", sans-serif;
+    }
+
+    main {
+      width: min(100%, 960px);
+      margin: 0 auto;
+      padding: 24px 16px 60px;
+    }
+
+    #stockTitle {
+      padding: 8px 0 30px;
+      text-align: center;
+      font-size: 23px;
+      font-weight: 800;
+      user-select: none;
+    }
+
+    .price-box {
+      text-align: center;
+      margin-bottom: 25px;
+    }
+
+    #price {
+      font-size: clamp(40px, 8vw, 54px);
+      font-weight: 800;
+      letter-spacing: -1.5px;
+    }
+
+    #change {
+      margin-top: 9px;
+      font-size: 20px;
+      font-weight: 750;
+      color: var(--up);
+    }
+
+    #dateLabel {
+      margin-top: 8px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .chart-card {
+      position: relative;
+      height: 330px;
+      overflow: hidden;
+      border-radius: 22px;
+      background: var(--card);
+      border: 1px solid rgba(255,255,255,.035);
+    }
+
+    canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+
+    #emptyText {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--muted);
+      font-size: 14px;
+      pointer-events: none;
+    }
+
+    #adminPanel {
+      display: none;
+      margin-top: 20px;
+      padding: 20px;
+      border-radius: 22px;
+      background: var(--card);
+      border: 1px solid rgba(255,255,255,.04);
+    }
+
+    #adminPanel.show { display: block; }
+
+    #adminPanel h2 {
+      margin: 0 0 14px;
+      font-size: 21px;
+    }
+
+    #adminPanel h3 {
+      margin: 20px 0 7px;
+      font-size: 15px;
+    }
+
+    input {
+      width: 100%;
+      margin-top: 10px;
+      padding: 14px;
+      border: 0;
+      border-radius: 12px;
+      outline: 0;
+      background: #fff;
+      color: #111;
+      font-size: 16px;
+    }
+
+    button {
+      width: 100%;
+      margin-top: 10px;
+      padding: 14px;
+      border: 0;
+      border-radius: 12px;
+      background: var(--up);
+      color: white;
+      font-size: 16px;
+      font-weight: 800;
+      cursor: pointer;
+    }
+
+    button.secondary { background: #303035; }
+    button:disabled { opacity: .5; cursor: not-allowed; }
+
+    #controls { display: none; }
+    #controls.show { display: block; }
+
+    .two-columns {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+
+    #status {
+      min-height: 20px;
+      margin-top: 13px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    .hint {
+      margin-top: 11px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.6;
+    }
+
+    @media (max-width: 640px) {
+      main { padding: 18px 12px 44px; }
+      .chart-card { height: 280px; }
+      .two-columns { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+
+<body>
+  <main>
+    <div id="stockTitle">NAM_PYONG</div>
+
+    <section class="price-box">
+      <div id="price">₩100,000</div>
+      <div id="change">▲ +0.00% (+0원)</div>
+      <div id="dateLabel">데이터 연결 중...</div>
+    </section>
+
+    <section class="chart-card">
+      <canvas id="chart"></canvas>
+      <div id="emptyText">첫 주가를 확정하면 차트가 표시됩니다.</div>
+    </section>
+
+    <section id="adminPanel">
+      <h2>관리자</h2>
+
+      <div id="loginArea">
+        <input id="adminEmail" type="email" placeholder="Firebase 관리자 이메일" autocomplete="username">
+        <input id="adminPassword" type="password" placeholder="Firebase 관리자 비밀번호" autocomplete="current-password">
+        <button id="loginBtn">로그인</button>
+      </div>
+
+      <div id="controls">
+        <div class="two-columns">
+          <div>
+            <h3>오늘 등락률 적용</h3>
+            <input id="percentInput" type="number" step="0.01" placeholder="예: 3 또는 -6">
+            <button id="applyBtn">오늘 주가 확정</button>
+          </div>
+
+          <div>
+            <h3>현재가 직접 수정</h3>
+            <input id="priceInput" type="number" min="1" step="1" placeholder="예: 103000">
+            <button id="setPriceBtn">오늘 현재가 수정</button>
+          </div>
+        </div>
+
+        <button id="logoutBtn" class="secondary">로그아웃</button>
+
+        <div class="hint">
+          등락률 적용은 한국 날짜 기준 하루 한 번만 가능합니다.
+          잘못 입력했을 때는 ‘오늘 현재가 수정’을 사용하면 같은 날짜의 차트 점이 수정됩니다.
+        </div>
+      </div>
+
+      <div id="status"></div>
+    </section>
+  </main>
+
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-app.js";
+    import {
+      getAuth,
+      signInWithEmailAndPassword,
+      signOut,
+      onAuthStateChanged,
+      setPersistence,
+      browserSessionPersistence
+    } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-auth.js";
+    import {
+      getDatabase,
+      ref,
+      onValue,
+      get,
+      set,
+      serverTimestamp
+    } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-database.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyAD_J8diFE51EdGvVGvsiQ76ttBJ12OFbg",
+      authDomain: "nam-pyong.firebaseapp.com",
+      databaseURL: "https://nam-pyong-default-rtdb.firebaseio.com",
+      projectId: "nam-pyong",
+      storageBucket: "nam-pyong.firebasestorage.app",
+      messagingSenderId: "680678513118",
+      appId: "1:680678513118:web:1d8b37e2ff308eac45254f",
+      measurementId: "G-MFEVTK26V1"
+    };
+
+    const ADMIN_UID = "GHyWIsOLntSzABJTBVWhAUSlWCU2";
+    const DEFAULT_PRICE = 100000;
+    const MAX_HISTORY_DAYS = 90;
+
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const db = getDatabase(app);
+    const stockRef = ref(db, "stock");
+
+    const $ = (id) => document.getElementById(id);
+    const canvas = $("chart");
+    const ctx = canvas.getContext("2d");
+
+    let isAdmin = false;
+    let stockData = {
+      currentPrice: DEFAULT_PRICE,
+      history: {},
+      updatedDate: ""
+    };
+
+    function todayInKorea() {
+      const parts = new Intl.DateTimeFormat("en-CA", {
+        timeZone: "Asia/Seoul",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit"
+      }).formatToParts(new Date());
+
+      const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+      return `${values.year}-${values.month}-${values.day}`;
+    }
+
+    function formatWon(value) {
+      return "₩" + Math.round(Number(value || 0)).toLocaleString("ko-KR");
+    }
+
+    function historyRows(data = stockData) {
+      return Object.entries(data.history || {})
+        .filter(([, value]) => Number.isFinite(Number(value)))
+        .sort(([dateA], [dateB]) => dateA.localeCompare(dateB));
+    }
+
+    function trimHistory(history) {
+      return Object.fromEntries(
+        Object.entries(history)
+          .sort(([dateA], [dateB]) => dateA.localeCompare(dateB))
+          .slice(-MAX_HISTORY_DAYS)
+      );
+    }
+
+    function getDailyChange() {
+      const rows = historyRows();
+
+      if (rows.length < 2) {
+        return { percent: 0, amount: 0 };
+      }
+
+      const current = Number(rows.at(-1)[1]);
+      const previous = Number(rows.at(-2)[1]);
+      const amount = current - previous;
+      const percent = previous === 0 ? 0 : (amount / previous) * 100;
+
+      return { percent, amount };
+    }
+
+    function render() {
+      const price = Number(stockData.currentPrice || DEFAULT_PRICE);
+      const change = getDailyChange();
+      const changeElement = $("change");
+
+      $("price").textContent = formatWon(price);
+
+      if (change.percent >= 0) {
+        changeElement.style.color = "#ff4d5a";
+        changeElement.textContent =
+          `▲ +${change.percent.toFixed(2)}% (+${Math.round(change.amount).toLocaleString("ko-KR")}원)`;
+      } else {
+        changeElement.style.color = "#4d9cff";
+        changeElement.textContent =
+          `▼ ${change.percent.toFixed(2)}% (${Math.round(change.amount).toLocaleString("ko-KR")}원)`;
+      }
+
+      $("dateLabel").textContent = stockData.updatedDate
+        ? `${stockData.updatedDate} 기준`
+        : "아직 확정된 주가가 없습니다.";
+
+      drawChart();
+    }
+
+    function resizeCanvas() {
+      const ratio = Math.max(1, window.devicePixelRatio || 1);
+      const rect = canvas.getBoundingClientRect();
+
+      canvas.width = Math.round(rect.width * ratio);
+      canvas.height = Math.round(rect.height * ratio);
+      ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+
+      drawChart();
+    }
+
+    function drawChart() {
+      const rect = canvas.getBoundingClientRect();
+      const width = rect.width;
+      const height = rect.height;
+
+      ctx.clearRect(0, 0, width, height);
+
+      const rows = historyRows();
+      $("emptyText").style.display = rows.length ? "none" : "flex";
+
+      if (!rows.length) return;
+
+      const prices = rows.map(([, price]) => Number(price));
+      let minimum = Math.min(...prices);
+      let maximum = Math.max(...prices);
+
+      if (minimum === maximum) {
+        minimum = minimum * 0.98;
+        maximum = maximum * 1.02;
+      }
+
+      const paddingX = 25;
+      const paddingY = 28;
+      const chartWidth = width - paddingX * 2;
+      const chartHeight = height - paddingY * 2;
+      const lineColor = getDailyChange().percent >= 0 ? "#ff4d5a" : "#4d9cff";
+
+      ctx.strokeStyle = "#2b2b30";
+      ctx.lineWidth = 1;
+
+      for (let line = 1; line <= 3; line++) {
+        const y = paddingY + chartHeight * (line / 4);
+        ctx.beginPath();
+        ctx.moveTo(paddingX, y);
+        ctx.lineTo(width - paddingX, y);
+        ctx.stroke();
+      }
+
+      const points = prices.map((price, index) => {
+        const x = rows.length === 1
+          ? width / 2
+          : paddingX + (index / (rows.length - 1)) * chartWidth;
+
+        const y = paddingY +
+          (1 - (price - minimum) / (maximum - minimum)) * chartHeight;
+
+        return { x, y };
+      });
+
+      ctx.beginPath();
+      ctx.strokeStyle = lineColor;
+      ctx.lineWidth = 3;
+      ctx.lineCap = "round";
+      ctx.lineJoin = "round";
+
+      points.forEach((point, index) => {
+        if (index === 0) ctx.moveTo(point.x, point.y);
+        else ctx.lineTo(point.x, point.y);
+      });
+
+      ctx.stroke();
+
+      const lastPoint = points.at(-1);
+      ctx.beginPath();
+      ctx.fillStyle = lineColor;
+      ctx.arc(lastPoint.x, lastPoint.y, 5, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = "#8e8e93";
+      ctx.font = "12px -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif";
+      ctx.textAlign = "left";
+      ctx.fillText(rows[0][0].slice(5), paddingX, height - 8);
+      ctx.textAlign = "right";
+      ctx.fillText(rows.at(-1)[0].slice(5), width - paddingX, height - 8);
+    }
+
+    function setStatus(message) {
+      $("status").textContent = message;
+    }
+
+    function showAdminPanel() {
+      $("adminPanel").classList.add("show");
+      $("adminPanel").scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+
+    async function createInitialDataIfNeeded() {
+      const snapshot = await get(stockRef);
+
+      if (!snapshot.exists()) {
+        await set(stockRef, {
+          currentPrice: DEFAULT_PRICE,
+          history: {},
+          updatedDate: "",
+          updatedAt: serverTimestamp()
+        });
+      }
+    }
+
+    async function saveTodayPrice(newPrice, preventSecondDailyChange) {
+      if (!isAdmin || auth.currentUser?.uid !== ADMIN_UID) {
+        throw new Error("관리자 권한이 없습니다.");
+      }
+
+      const snapshot = await get(stockRef);
+      const current = snapshot.exists()
+        ? snapshot.val()
+        : { currentPrice: DEFAULT_PRICE, history: {}, updatedDate: "" };
+
+      const today = todayInKorea();
+
+      if (preventSecondDailyChange && current.updatedDate === today) {
+        throw new Error(
+          "오늘 등락은 이미 반영했습니다. 잘못 입력했다면 ‘오늘 현재가 수정’을 사용하세요."
+        );
+      }
+
+      const history = trimHistory({
+        ...(current.history || {}),
+        [today]: Math.round(newPrice)
+      });
+
+      await set(stockRef, {
+        currentPrice: Math.round(newPrice),
+        history,
+        updatedDate: today,
+        updatedAt: serverTimestamp()
+      });
+    }
+
+    $("loginBtn").addEventListener("click", async () => {
+      const email = $("adminEmail").value.trim();
+      const password = $("adminPassword").value;
+
+      if (!email || !password) {
+        setStatus("이메일과 비밀번호를 입력하세요.");
+        return;
+      }
+
+      try {
+        $("loginBtn").disabled = true;
+        setStatus("로그인 중...");
+
+        await setPersistence(auth, browserSessionPersistence);
+        const result = await signInWithEmailAndPassword(auth, email, password);
+
+        if (result.user.uid !== ADMIN_UID) {
+          await signOut(auth);
+          throw new Error("관리자 UID가 아닌 계정입니다.");
+        }
+
+        setStatus("관리자로 로그인했습니다.");
+      } catch (error) {
+        console.error(error);
+        setStatus("로그인 실패: 이메일 또는 비밀번호를 확인하세요.");
+      } finally {
+        $("loginBtn").disabled = false;
+      }
+    });
+
+    $("applyBtn").addEventListener("click", async () => {
+      const percent = Number($("percentInput").value);
+
+      if (!Number.isFinite(percent)) {
+        setStatus("등락률을 숫자로 입력하세요.");
+        return;
+      }
+
+      try {
+        $("applyBtn").disabled = true;
+
+        const snapshot = await get(stockRef);
+        const current = snapshot.exists() ? snapshot.val() : stockData;
+        const currentPrice = Number(current.currentPrice || DEFAULT_PRICE);
+        const newPrice = Math.round(currentPrice * (1 + percent / 100));
+
+        if (newPrice <= 0) {
+          throw new Error("계산된 주가가 1원 미만입니다.");
+        }
+
+        await saveTodayPrice(newPrice, true);
+        $("percentInput").value = "";
+        setStatus(`오늘 주가를 ${formatWon(newPrice)}으로 확정했습니다.`);
+      } catch (error) {
+        console.error(error);
+        setStatus(error.message || "저장하지 못했습니다.");
+      } finally {
+        $("applyBtn").disabled = false;
+      }
+    });
+
+    $("setPriceBtn").addEventListener("click", async () => {
+      const newPrice = Number($("priceInput").value);
+
+      if (!Number.isFinite(newPrice) || newPrice <= 0) {
+        setStatus("1원 이상의 현재가를 입력하세요.");
+        return;
+      }
+
+      try {
+        $("setPriceBtn").disabled = true;
+        await saveTodayPrice(Math.round(newPrice), false);
+        $("priceInput").value = "";
+        setStatus(`오늘 현재가를 ${formatWon(newPrice)}으로 수정했습니다.`);
+      } catch (error) {
+        console.error(error);
+        setStatus(error.message || "저장하지 못했습니다.");
+      } finally {
+        $("setPriceBtn").disabled = false;
+      }
+    });
+
+    $("logoutBtn").addEventListener("click", async () => {
+      await signOut(auth);
+      setStatus("로그아웃했습니다.");
+    });
+
+    onAuthStateChanged(auth, async (user) => {
+      isAdmin = Boolean(user && user.uid === ADMIN_UID);
+
+      $("controls").classList.toggle("show", isAdmin);
+      $("loginArea").style.display = isAdmin ? "none" : "block";
+
+      if (isAdmin) {
+        try {
+          await createInitialDataIfNeeded();
+        } catch (error) {
+          console.error(error);
+          setStatus("초기 데이터 생성 실패: Realtime Database 규칙을 확인하세요.");
+        }
+      }
+    });
+
+    onValue(
+      stockRef,
+      (snapshot) => {
+        stockData = snapshot.exists()
+          ? snapshot.val()
+          : { currentPrice: DEFAULT_PRICE, history: {}, updatedDate: "" };
+
+        render();
+      },
+      (error) => {
+        console.error(error);
+        $("dateLabel").textContent = "데이터 읽기 실패: Database 규칙을 확인하세요.";
+      }
+    );
+
+    let titleClicks = 0;
+    let clickResetTimer;
+
+    $("stockTitle").addEventListener("click", () => {
+      titleClicks += 1;
+      clearTimeout(clickResetTimer);
+      clickResetTimer = setTimeout(() => { titleClicks = 0; }, 1800);
+
+      if (titleClicks >= 5) {
+        titleClicks = 0;
+        showAdminPanel();
+      }
+    });
+
+    if (location.hash === "#admin") {
+      showAdminPanel();
+    }
+
+    window.addEventListener("resize", resizeCanvas);
+
+    render();
+    requestAnimationFrame(resizeCanvas);
+  </script>
+</body>
+</html>
