@@ -5,170 +5,94 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>NAM_PYONG</title>
   <style>
-    :root {
-      --bg: #101012;
-      --card: #1b1b1e;
-      --text: #f5f5f7;
-      --muted: #8e8e93;
-      --grid: #2b2b30;
-      --up: #ff4d5a;
-      --down: #4d9cff;
+    :root{
+      --bg:#101012;
+      --card:#1b1b1e;
+      --soft:#242428;
+      --text:#f5f5f7;
+      --muted:#8e8e93;
+      --grid:#2b2b30;
+      --up:#ff4d5a;
+      --down:#4d9cff;
+      --ok:#31c48d;
     }
-
-    * { box-sizing: border-box; }
-
-    body {
-      margin: 0;
-      background: var(--bg);
-      color: var(--text);
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans KR", sans-serif;
+    *{box-sizing:border-box}
+    body{
+      margin:0;background:var(--bg);color:var(--text);
+      font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans KR",sans-serif
     }
-
-    main {
-      width: min(100%, 960px);
-      margin: 0 auto;
-      padding: 24px 16px 60px;
+    main{width:min(100%,980px);margin:0 auto;padding:24px 16px 60px}
+    #stockTitle{
+      padding:8px 0 30px;text-align:center;font-size:23px;font-weight:800;
+      user-select:none;cursor:default
     }
-
-    #stockTitle {
-      padding: 8px 0 30px;
-      text-align: center;
-      font-size: 23px;
-      font-weight: 800;
-      user-select: none;
+    .price-box{text-align:center;margin-bottom:25px}
+    #price{font-size:clamp(40px,8vw,54px);font-weight:800;letter-spacing:-1.5px}
+    #change{margin-top:9px;font-size:20px;font-weight:750;color:var(--up)}
+    #dateLabel{margin-top:8px;color:var(--muted);font-size:13px}
+    .card{margin-top:20px;padding:20px;border-radius:22px;background:var(--card);border:1px solid rgba(255,255,255,.04)}
+    .chart-card{position:relative;height:330px;overflow:hidden;border-radius:22px;background:var(--card);border:1px solid rgba(255,255,255,.04)}
+    canvas{display:block;width:100%;height:100%}
+    #emptyText{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:14px;pointer-events:none}
+    .section-head{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:17px}
+    .section-title{margin:0;font-size:21px}
+    .nickname{color:var(--muted);font-size:14px}
+    .metric-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+    .metric{min-height:86px;padding:15px;border-radius:16px;background:var(--soft)}
+    .metric-label{margin-bottom:8px;color:var(--muted);font-size:13px}
+    .metric-value{font-size:20px;font-weight:800;word-break:break-word}
+    .up{color:var(--up)} .down{color:var(--down)}
+    .trade-grid,.admin-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:18px}
+    .box{padding:16px;border-radius:16px;background:var(--soft)}
+    .box h3,#adminPanel h3{margin:0 0 10px;font-size:16px}
+    input{
+      width:100%;margin-top:9px;padding:14px;border:0;border-radius:12px;outline:0;
+      background:#fff;color:#111;font-size:16px
     }
-
-    .price-box {
-      text-align: center;
-      margin-bottom: 25px;
+    button{
+      width:100%;margin-top:10px;padding:14px;border:0;border-radius:12px;
+      color:#fff;font-size:16px;font-weight:800;cursor:pointer
     }
-
-    #price {
-      font-size: clamp(40px, 8vw, 54px);
-      font-weight: 800;
-      letter-spacing: -1.5px;
+    button:disabled{opacity:.5;cursor:not-allowed}
+    .buy{background:var(--up)} .sell{background:var(--down)}
+    .primary{background:var(--up)} .secondary{background:#303035}
+    .status{min-height:20px;margin-top:13px;color:var(--muted);font-size:13px;line-height:1.5}
+    .notice{margin-top:13px;color:var(--muted);font-size:12px;line-height:1.6}
+    .trade-history{margin-top:20px}
+    .trade-history h3{margin:0 0 10px;font-size:16px}
+    #tradeList{display:grid;gap:8px}
+    .trade-row{display:grid;grid-template-columns:62px 1fr auto;gap:10px;align-items:center;padding:12px 13px;border-radius:13px;background:var(--soft);font-size:14px}
+    .trade-type{font-weight:800}.trade-type.buy-text{color:var(--up)}.trade-type.sell-text{color:var(--down)}
+    .trade-detail{color:#d7d7da;line-height:1.5}.trade-time{color:var(--muted);font-size:12px;text-align:right}
+    .empty-row{padding:16px;border-radius:13px;background:var(--soft);color:var(--muted);font-size:13px;text-align:center}
+    #adminPanel{display:none} #adminPanel.show{display:block}
+    #adminControls{display:none} #adminControls.show{display:block}
+    .admin-summary{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:18px}
+    .players-head{display:flex;justify-content:space-between;align-items:center;margin:24px 0 10px}
+    .players-head h3{margin:0}
+    #playersList{display:grid;gap:9px}
+    .player-row{display:grid;grid-template-columns:minmax(100px,1.2fr) repeat(5,minmax(85px,1fr));gap:8px;align-items:center;padding:13px;border-radius:14px;background:var(--soft);font-size:13px}
+    .player-name{font-weight:800;font-size:14px}.player-label{display:none;color:var(--muted);font-size:11px;margin-bottom:3px}
+    .player-profit.positive{color:var(--up)}.player-profit.negative{color:var(--down)}
+    .modal-backdrop{
+      display:none;position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,.72);
+      align-items:center;justify-content:center;padding:18px
     }
-
-    #change {
-      margin-top: 9px;
-      font-size: 20px;
-      font-weight: 750;
-      color: var(--up);
+    .modal-backdrop.show{display:flex}
+    .modal{width:min(100%,430px);padding:23px;border-radius:22px;background:var(--card);box-shadow:0 20px 80px rgba(0,0,0,.45)}
+    .modal h2{margin:0 0 8px}.modal p{margin:0;color:var(--muted);font-size:13px;line-height:1.6}
+    @media(max-width:760px){
+      main{padding:18px 12px 44px}.chart-card{height:280px}
+      .metric-grid{grid-template-columns:1fr 1fr}.trade-grid,.admin-grid{grid-template-columns:1fr}
+      .player-row{grid-template-columns:1fr 1fr;padding:15px}.player-name{grid-column:1/-1}
+      .player-label{display:block}.admin-summary{grid-template-columns:1fr}
     }
-
-    #dateLabel {
-      margin-top: 8px;
-      color: var(--muted);
-      font-size: 13px;
-    }
-
-    .chart-card {
-      position: relative;
-      height: 330px;
-      overflow: hidden;
-      border-radius: 22px;
-      background: var(--card);
-      border: 1px solid rgba(255,255,255,.035);
-    }
-
-    canvas {
-      display: block;
-      width: 100%;
-      height: 100%;
-    }
-
-    #emptyText {
-      position: absolute;
-      inset: 0;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      color: var(--muted);
-      font-size: 14px;
-      pointer-events: none;
-    }
-
-    #adminPanel {
-      display: none;
-      margin-top: 20px;
-      padding: 20px;
-      border-radius: 22px;
-      background: var(--card);
-      border: 1px solid rgba(255,255,255,.04);
-    }
-
-    #adminPanel.show { display: block; }
-
-    #adminPanel h2 {
-      margin: 0 0 14px;
-      font-size: 21px;
-    }
-
-    #adminPanel h3 {
-      margin: 20px 0 7px;
-      font-size: 15px;
-    }
-
-    input {
-      width: 100%;
-      margin-top: 10px;
-      padding: 14px;
-      border: 0;
-      border-radius: 12px;
-      outline: 0;
-      background: #fff;
-      color: #111;
-      font-size: 16px;
-    }
-
-    button {
-      width: 100%;
-      margin-top: 10px;
-      padding: 14px;
-      border: 0;
-      border-radius: 12px;
-      background: var(--up);
-      color: white;
-      font-size: 16px;
-      font-weight: 800;
-      cursor: pointer;
-    }
-
-    button.secondary { background: #303035; }
-    button:disabled { opacity: .5; cursor: not-allowed; }
-
-    #controls { display: none; }
-    #controls.show { display: block; }
-
-    .two-columns {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 12px;
-    }
-
-    #status {
-      min-height: 20px;
-      margin-top: 13px;
-      color: var(--muted);
-      font-size: 13px;
-      line-height: 1.5;
-    }
-
-    .hint {
-      margin-top: 11px;
-      color: var(--muted);
-      font-size: 12px;
-      line-height: 1.6;
-    }
-
-    @media (max-width: 640px) {
-      main { padding: 18px 12px 44px; }
-      .chart-card { height: 280px; }
-      .two-columns { grid-template-columns: 1fr; }
+    @media(max-width:440px){
+      .metric-grid{grid-template-columns:1fr}
+      .trade-row{grid-template-columns:58px 1fr}.trade-time{grid-column:2;text-align:left}
     }
   </style>
 </head>
-
 <body>
   <main>
     <div id="stockTitle">NAM_PYONG</div>
@@ -181,62 +105,109 @@
 
     <section class="chart-card">
       <canvas id="chart"></canvas>
-      <div id="emptyText">첫 주가를 확정하면 차트가 표시됩니다.</div>
+      <div id="emptyText">주가 기록이 쌓이면 차트가 표시됩니다.</div>
     </section>
 
-    <section id="adminPanel">
-      <h2>관리자</h2>
-
-      <div id="loginArea">
-        <input id="adminEmail" type="email" placeholder="Firebase 관리자 이메일" autocomplete="username">
-        <input id="adminPassword" type="password" placeholder="Firebase 관리자 비밀번호" autocomplete="current-password">
-        <button id="loginBtn">로그인</button>
+    <section class="card">
+      <div class="section-head">
+        <h2 class="section-title">내 가상 계좌</h2>
+        <div class="nickname" id="nicknameLabel">계좌 연결 중...</div>
       </div>
 
-      <div id="controls">
-        <div class="two-columns">
-          <div>
+      <div class="metric-grid">
+        <div class="metric"><div class="metric-label">보유 현금</div><div class="metric-value" id="cashValue">₩500,000</div></div>
+        <div class="metric"><div class="metric-label">보유 수량</div><div class="metric-value" id="sharesValue">0주</div></div>
+        <div class="metric"><div class="metric-label">평균 매수가</div><div class="metric-value" id="averagePriceValue">-</div></div>
+        <div class="metric"><div class="metric-label">주식 평가금액</div><div class="metric-value" id="marketValue">₩0</div></div>
+        <div class="metric"><div class="metric-label">총자산</div><div class="metric-value" id="totalAssetsValue">₩500,000</div></div>
+        <div class="metric"><div class="metric-label">평가손익 · 수익률</div><div class="metric-value up" id="profitValue">0원 · +0.00%</div></div>
+      </div>
+
+      <div class="trade-grid">
+        <div class="box">
+          <h3>매수</h3>
+          <input id="buyQuantity" type="number" min="1" step="1" placeholder="매수 수량">
+          <button class="buy" id="buyButton">현재가로 매수</button>
+        </div>
+        <div class="box">
+          <h3>매도</h3>
+          <input id="sellQuantity" type="number" min="1" step="1" placeholder="매도 수량">
+          <button class="sell" id="sellButton">현재가로 매도</button>
+        </div>
+      </div>
+
+      <div class="status" id="tradeStatus"></div>
+
+      <div class="trade-history">
+        <h3>최근 거래</h3>
+        <div id="tradeList"></div>
+      </div>
+
+      <div class="notice">
+        로그인 화면은 없지만 Firebase 익명 계정으로 자동 구분됩니다.
+        같은 브라우저에서는 계좌가 유지되며, 쿠키·사이트 데이터를 삭제하거나 다른 기기를 사용하면 새 계좌가 만들어질 수 있습니다.
+      </div>
+    </section>
+
+    <section class="card" id="adminPanel">
+      <h2 class="section-title">관리자</h2>
+
+      <div id="adminLoginArea">
+        <input id="adminEmail" type="email" placeholder="관리자 이메일" autocomplete="username">
+        <input id="adminPassword" type="password" placeholder="관리자 비밀번호" autocomplete="current-password">
+        <button class="primary" id="adminLoginButton">관리자 로그인</button>
+      </div>
+
+      <div id="adminControls">
+        <div class="admin-grid">
+          <div class="box">
             <h3>오늘 등락률 적용</h3>
             <input id="percentInput" type="number" step="0.01" placeholder="예: 3 또는 -6">
-            <button id="applyBtn">오늘 주가 확정</button>
+            <button class="primary" id="applyButton">오늘 주가 확정</button>
           </div>
-
-          <div>
-            <h3>현재가 직접 수정</h3>
+          <div class="box">
+            <h3>오늘 현재가 직접 수정</h3>
             <input id="priceInput" type="number" min="1" step="1" placeholder="예: 103000">
-            <button id="setPriceBtn">오늘 현재가 수정</button>
+            <button class="primary" id="setPriceButton">오늘 현재가 수정</button>
           </div>
         </div>
 
-        <button id="logoutBtn" class="secondary">로그아웃</button>
-
-        <div class="hint">
-          등락률 적용은 한국 날짜 기준 하루 한 번만 가능합니다.
-          잘못 입력했을 때는 ‘오늘 현재가 수정’을 사용하면 같은 날짜의 차트 점이 수정됩니다.
+        <div class="admin-summary">
+          <div class="metric"><div class="metric-label">참여 계좌</div><div class="metric-value" id="playerCount">0명</div></div>
+          <div class="metric"><div class="metric-label">전체 보유 주식</div><div class="metric-value" id="allShares">0주</div></div>
+          <div class="metric"><div class="metric-label">전체 가상자산</div><div class="metric-value" id="allAssets">₩0</div></div>
         </div>
+
+        <div class="players-head">
+          <h3>전체 참가자 계좌</h3>
+          <button class="secondary" id="adminLogoutButton" style="width:auto;margin:0;padding:10px 16px">로그아웃</button>
+        </div>
+        <div id="playersList"><div class="empty-row">관리자 로그인 후 표시됩니다.</div></div>
       </div>
 
-      <div id="status"></div>
+      <div class="status" id="adminStatus"></div>
     </section>
   </main>
+
+  <div class="modal-backdrop" id="nicknameModal">
+    <div class="modal">
+      <h2>닉네임 정하기</h2>
+      <p>친구들이 구분할 수 있는 닉네임을 입력하세요. 처음 한 번만 설정합니다.</p>
+      <input id="nicknameInput" maxlength="12" placeholder="1~12자 닉네임">
+      <button class="primary" id="nicknameButton">50만 원으로 시작하기</button>
+      <div class="status" id="nicknameStatus"></div>
+    </div>
+  </div>
 
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-app.js";
     import {
-      getAuth,
-      signInWithEmailAndPassword,
-      signOut,
-      onAuthStateChanged,
-      setPersistence,
-      browserSessionPersistence
+      getAuth, signInAnonymously, onAuthStateChanged,
+      signInWithEmailAndPassword, signOut,
+      setPersistence, browserLocalPersistence, browserSessionPersistence
     } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-auth.js";
     import {
-      getDatabase,
-      ref,
-      onValue,
-      get,
-      set,
-      serverTimestamp
+      getDatabase, ref, onValue, get, set, runTransaction, serverTimestamp
     } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-database.js";
 
     const firebaseConfig = {
@@ -251,374 +222,395 @@
     };
 
     const ADMIN_UID = "GHyWIsOLntSzABJTBVWhAUSlWCU2";
+    const STARTING_CASH = 500000;
     const DEFAULT_PRICE = 100000;
     const MAX_HISTORY_DAYS = 90;
+    const MAX_TRADES = 30;
 
-    const app = initializeApp(firebaseConfig);
-    const auth = getAuth(app);
-    const db = getDatabase(app);
-    const stockRef = ref(db, "stock");
+    const playerApp = initializeApp(firebaseConfig);
+    const adminApp = initializeApp(firebaseConfig, "nam-pyong-admin");
 
-    const $ = (id) => document.getElementById(id);
+    const playerAuth = getAuth(playerApp);
+    const adminAuth = getAuth(adminApp);
+    const playerDatabase = getDatabase(playerApp);
+    const adminDatabase = getDatabase(adminApp);
+
+    const stockReference = ref(playerDatabase, "stock");
+    const adminStockReference = ref(adminDatabase, "stock");
+    const adminPlayersReference = ref(adminDatabase, "players");
+
+    const $ = id => document.getElementById(id);
     const canvas = $("chart");
-    const ctx = canvas.getContext("2d");
+    const context = canvas.getContext("2d");
 
-    let isAdmin = false;
-    let stockData = {
-      currentPrice: DEFAULT_PRICE,
-      history: {},
-      updatedDate: ""
-    };
+    let playerUser = null;
+    let playerData = null;
+    let playerUnsubscribe = null;
+    let playersUnsubscribe = null;
+    let adminIsLoggedIn = false;
+    let stockData = { currentPrice:DEFAULT_PRICE, history:{}, updatedDate:"" };
 
-    function todayInKorea() {
-      const parts = new Intl.DateTimeFormat("en-CA", {
-        timeZone: "Asia/Seoul",
-        year: "numeric",
-        month: "2-digit",
-        day: "2-digit"
-      }).formatToParts(new Date());
-
-      const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
-      return `${values.year}-${values.month}-${values.day}`;
-    }
-
-    function formatWon(value) {
+    function formatWon(value){
       return "₩" + Math.round(Number(value || 0)).toLocaleString("ko-KR");
     }
-
-    function historyRows(data = stockData) {
+    function currentPrice(){
+      return Math.max(1, Math.round(Number(stockData.currentPrice || DEFAULT_PRICE)));
+    }
+    function todayInKorea(){
+      const parts = new Intl.DateTimeFormat("en-CA",{
+        timeZone:"Asia/Seoul",year:"numeric",month:"2-digit",day:"2-digit"
+      }).formatToParts(new Date());
+      const map = Object.fromEntries(parts.map(p=>[p.type,p.value]));
+      return `${map.year}-${map.month}-${map.day}`;
+    }
+    function formatTime(timestamp){
+      return new Intl.DateTimeFormat("ko-KR",{
+        timeZone:"Asia/Seoul",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit"
+      }).format(new Date(timestamp));
+    }
+    function historyRows(data=stockData){
       return Object.entries(data.history || {})
-        .filter(([, value]) => Number.isFinite(Number(value)))
-        .sort(([dateA], [dateB]) => dateA.localeCompare(dateB));
+        .filter(([,v])=>Number.isFinite(Number(v)))
+        .sort(([a],[b])=>a.localeCompare(b));
     }
-
-    function trimHistory(history) {
-      return Object.fromEntries(
-        Object.entries(history)
-          .sort(([dateA], [dateB]) => dateA.localeCompare(dateB))
-          .slice(-MAX_HISTORY_DAYS)
-      );
-    }
-
-    function getDailyChange() {
+    function dailyChange(){
       const rows = historyRows();
-
-      if (rows.length < 2) {
-        return { percent: 0, amount: 0 };
-      }
-
-      const current = Number(rows.at(-1)[1]);
-      const previous = Number(rows.at(-2)[1]);
-      const amount = current - previous;
-      const percent = previous === 0 ? 0 : (amount / previous) * 100;
-
-      return { percent, amount };
+      if(rows.length < 2) return {amount:0,percent:0};
+      const now = Number(rows.at(-1)[1]);
+      const prev = Number(rows.at(-2)[1]);
+      const amount = now-prev;
+      return {amount,percent:prev===0?0:(amount/prev)*100};
+    }
+    function trimHistory(history){
+      return Object.fromEntries(Object.entries(history).sort(([a],[b])=>a.localeCompare(b)).slice(-MAX_HISTORY_DAYS));
+    }
+    function sanitizeNickname(value){
+      return value.trim().replace(/\s+/g," ").slice(0,12);
+    }
+    function normalizePlayer(value){
+      return {
+        nickname:String(value?.nickname || ""),
+        cash:Number(value?.cash || 0),
+        shares:Number(value?.shares || 0),
+        totalCost:Number(value?.totalCost || 0),
+        createdAt:Number(value?.createdAt || Date.now()),
+        updatedAt:Number(value?.updatedAt || Date.now()),
+        trades:value?.trades && typeof value.trades==="object" ? value.trades : {}
+      };
+    }
+    function averagePrice(data){
+      return data && data.shares>0 ? data.totalCost/data.shares : 0;
+    }
+    function accountStats(data){
+      const price=currentPrice();
+      const market=data.shares*price;
+      const total=data.cash+market;
+      const profit=market-data.totalCost;
+      const rate=data.totalCost>0?(profit/data.totalCost)*100:0;
+      return {price,market,total,profit,rate,average:averagePrice(data)};
     }
 
-    function render() {
-      const price = Number(stockData.currentPrice || DEFAULT_PRICE);
-      const change = getDailyChange();
-      const changeElement = $("change");
-
-      $("price").textContent = formatWon(price);
-
-      if (change.percent >= 0) {
-        changeElement.style.color = "#ff4d5a";
-        changeElement.textContent =
-          `▲ +${change.percent.toFixed(2)}% (+${Math.round(change.amount).toLocaleString("ko-KR")}원)`;
-      } else {
-        changeElement.style.color = "#4d9cff";
-        changeElement.textContent =
-          `▼ ${change.percent.toFixed(2)}% (${Math.round(change.amount).toLocaleString("ko-KR")}원)`;
-      }
-
-      $("dateLabel").textContent = stockData.updatedDate
-        ? `${stockData.updatedDate} 기준`
-        : "아직 확정된 주가가 없습니다.";
-
+    function renderStock(){
+      const price=currentPrice(), change=dailyChange();
+      $("price").textContent=formatWon(price);
+      $("change").style.color=change.percent>=0?"#ff4d5a":"#4d9cff";
+      $("change").textContent=change.percent>=0
+        ? `▲ +${change.percent.toFixed(2)}% (+${Math.round(change.amount).toLocaleString("ko-KR")}원)`
+        : `▼ ${change.percent.toFixed(2)}% (${Math.round(change.amount).toLocaleString("ko-KR")}원)`;
+      $("dateLabel").textContent=stockData.updatedDate?`${stockData.updatedDate} 기준`:"아직 확정된 주가가 없습니다.";
       drawChart();
+      renderPlayer();
     }
-
-    function resizeCanvas() {
-      const ratio = Math.max(1, window.devicePixelRatio || 1);
-      const rect = canvas.getBoundingClientRect();
-
-      canvas.width = Math.round(rect.width * ratio);
-      canvas.height = Math.round(rect.height * ratio);
-      ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
-
-      drawChart();
-    }
-
-    function drawChart() {
-      const rect = canvas.getBoundingClientRect();
-      const width = rect.width;
-      const height = rect.height;
-
-      ctx.clearRect(0, 0, width, height);
-
-      const rows = historyRows();
-      $("emptyText").style.display = rows.length ? "none" : "flex";
-
-      if (!rows.length) return;
-
-      const prices = rows.map(([, price]) => Number(price));
-      let minimum = Math.min(...prices);
-      let maximum = Math.max(...prices);
-
-      if (minimum === maximum) {
-        minimum = minimum * 0.98;
-        maximum = maximum * 1.02;
+    function renderPlayer(){
+      if(!playerData){
+        $("nicknameLabel").textContent="계좌 연결 중...";
+        return;
       }
-
-      const paddingX = 25;
-      const paddingY = 28;
-      const chartWidth = width - paddingX * 2;
-      const chartHeight = height - paddingY * 2;
-      const lineColor = getDailyChange().percent >= 0 ? "#ff4d5a" : "#4d9cff";
-
-      ctx.strokeStyle = "#2b2b30";
-      ctx.lineWidth = 1;
-
-      for (let line = 1; line <= 3; line++) {
-        const y = paddingY + chartHeight * (line / 4);
-        ctx.beginPath();
-        ctx.moveTo(paddingX, y);
-        ctx.lineTo(width - paddingX, y);
-        ctx.stroke();
+      const s=accountStats(playerData);
+      $("nicknameLabel").textContent=`${playerData.nickname} 님`;
+      $("cashValue").textContent=formatWon(playerData.cash);
+      $("sharesValue").textContent=`${playerData.shares.toLocaleString("ko-KR")}주`;
+      $("averagePriceValue").textContent=playerData.shares>0?formatWon(s.average):"-";
+      $("marketValue").textContent=formatWon(s.market);
+      $("totalAssetsValue").textContent=formatWon(s.total);
+      const p=$("profitValue");
+      p.textContent=`${s.profit>0?"+":""}${Math.round(s.profit).toLocaleString("ko-KR")}원 · ${s.rate>=0?"+":""}${s.rate.toFixed(2)}%`;
+      p.classList.toggle("up",s.profit>=0);
+      p.classList.toggle("down",s.profit<0);
+      renderTrades();
+    }
+    function renderTrades(){
+      const list=$("tradeList");
+      list.innerHTML="";
+      const trades=Object.entries(playerData?.trades || {})
+        .map(([id,t])=>({id,...t}))
+        .sort((a,b)=>Number(b.timestamp)-Number(a.timestamp))
+        .slice(0,10);
+      if(!trades.length){
+        list.innerHTML='<div class="empty-row">아직 매매 내역이 없습니다.</div>';
+        return;
       }
+      for(const trade of trades){
+        const row=document.createElement("div"); row.className="trade-row";
+        const type=document.createElement("div");
+        type.className=`trade-type ${trade.type==="buy"?"buy-text":"sell-text"}`;
+        type.textContent=trade.type==="buy"?"매수":"매도";
+        const detail=document.createElement("div"); detail.className="trade-detail";
+        detail.textContent=`${Number(trade.quantity).toLocaleString("ko-KR")}주 · ${formatWon(trade.price)}`;
+        const time=document.createElement("div"); time.className="trade-time";
+        time.textContent=formatTime(trade.timestamp);
+        row.append(type,detail,time); list.appendChild(row);
+      }
+    }
+    function setTradeStatus(text){$("tradeStatus").textContent=text}
+    function setAdminStatus(text){$("adminStatus").textContent=text}
+    function setNicknameStatus(text){$("nicknameStatus").textContent=text}
 
-      const points = prices.map((price, index) => {
-        const x = rows.length === 1
-          ? width / 2
-          : paddingX + (index / (rows.length - 1)) * chartWidth;
-
-        const y = paddingY +
-          (1 - (price - minimum) / (maximum - minimum)) * chartHeight;
-
-        return { x, y };
+    async function ensureAnonymousUser(){
+      await setPersistence(playerAuth,browserLocalPersistence);
+      if(!playerAuth.currentUser) await signInAnonymously(playerAuth);
+    }
+    function watchPlayer(uid){
+      if(playerUnsubscribe) playerUnsubscribe();
+      const playerRef=ref(playerDatabase,`players/${uid}`);
+      playerUnsubscribe=onValue(playerRef,snapshot=>{
+        if(snapshot.exists()){
+          playerData=normalizePlayer(snapshot.val());
+          $("nicknameModal").classList.remove("show");
+          renderPlayer();
+        }else{
+          playerData=null;
+          $("nicknameModal").classList.add("show");
+        }
+      },error=>{
+        console.error(error);
+        setTradeStatus("계좌를 불러오지 못했습니다. Firebase 규칙을 확인하세요.");
       });
-
-      ctx.beginPath();
-      ctx.strokeStyle = lineColor;
-      ctx.lineWidth = 3;
-      ctx.lineCap = "round";
-      ctx.lineJoin = "round";
-
-      points.forEach((point, index) => {
-        if (index === 0) ctx.moveTo(point.x, point.y);
-        else ctx.lineTo(point.x, point.y);
-      });
-
-      ctx.stroke();
-
-      const lastPoint = points.at(-1);
-      ctx.beginPath();
-      ctx.fillStyle = lineColor;
-      ctx.arc(lastPoint.x, lastPoint.y, 5, 0, Math.PI * 2);
-      ctx.fill();
-
-      ctx.fillStyle = "#8e8e93";
-      ctx.font = "12px -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif";
-      ctx.textAlign = "left";
-      ctx.fillText(rows[0][0].slice(5), paddingX, height - 8);
-      ctx.textAlign = "right";
-      ctx.fillText(rows.at(-1)[0].slice(5), width - paddingX, height - 8);
     }
-
-    function setStatus(message) {
-      $("status").textContent = message;
-    }
-
-    function showAdminPanel() {
-      $("adminPanel").classList.add("show");
-      $("adminPanel").scrollIntoView({ behavior: "smooth", block: "start" });
-    }
-
-    async function createInitialDataIfNeeded() {
-      const snapshot = await get(stockRef);
-
-      if (!snapshot.exists()) {
-        await set(stockRef, {
-          currentPrice: DEFAULT_PRICE,
-          history: {},
-          updatedDate: "",
-          updatedAt: serverTimestamp()
+    async function createPlayer(){
+      if(!playerUser) return;
+      const nickname=sanitizeNickname($("nicknameInput").value);
+      if(nickname.length<1){
+        setNicknameStatus("닉네임을 입력하세요.");
+        return;
+      }
+      try{
+        $("nicknameButton").disabled=true;
+        const now=Date.now();
+        const playerRef=ref(playerDatabase,`players/${playerUser.uid}`);
+        await runTransaction(playerRef,current=>{
+          if(current) return current;
+          return {nickname,cash:STARTING_CASH,shares:0,totalCost:0,createdAt:now,updatedAt:now,trades:{}};
         });
+        setNicknameStatus("");
+      }catch(error){
+        console.error(error);
+        setNicknameStatus("계좌 생성 실패: 익명 로그인이 켜져 있는지와 규칙을 확인하세요.");
+      }finally{
+        $("nicknameButton").disabled=false;
+      }
+    }
+    function trimTrades(trades){
+      const entries=Object.entries(trades || {}).sort(([,a],[,b])=>Number(b.timestamp)-Number(a.timestamp)).slice(0,MAX_TRADES);
+      return Object.fromEntries(entries);
+    }
+    async function trade(type){
+      if(!playerUser || !playerData){
+        setTradeStatus("계좌 연결을 기다려주세요.");
+        return;
+      }
+      const input=type==="buy"?$("buyQuantity"):$("sellQuantity");
+      const quantity=Number(input.value);
+      if(!Number.isInteger(quantity)||quantity<=0){
+        setTradeStatus(`${type==="buy"?"매수":"매도"} 수량을 1주 이상의 정수로 입력하세요.`);
+        return;
+      }
+      const price=currentPrice();
+      const tradeId=`${Date.now()}_${Math.random().toString(36).slice(2,8)}`;
+      const playerRef=ref(playerDatabase,`players/${playerUser.uid}`);
+      try{
+        const result=await runTransaction(playerRef,current=>{
+          if(!current) return;
+          const p=normalizePlayer(current);
+          const amount=quantity*price;
+          if(type==="buy"){
+            if(p.cash<amount) return;
+            p.cash-=amount; p.shares+=quantity; p.totalCost+=amount;
+          }else{
+            if(p.shares<quantity) return;
+            const avg=p.shares>0?p.totalCost/p.shares:0;
+            p.cash+=amount; p.shares-=quantity; p.totalCost=Math.max(0,p.totalCost-avg*quantity);
+            if(p.shares===0) p.totalCost=0;
+          }
+          p.updatedAt=Date.now();
+          p.trades=trimTrades({...p.trades,[tradeId]:{type,quantity,price,timestamp:Date.now()}});
+          return p;
+        });
+        if(!result.committed){
+          setTradeStatus(type==="buy"?"현금이 부족합니다.":"보유 수량보다 많이 매도할 수 없습니다.");
+          return;
+        }
+        input.value="";
+        setTradeStatus(`${quantity.toLocaleString("ko-KR")}주를 ${formatWon(quantity*price)}에 ${type==="buy"?"매수":"매도"}했습니다.`);
+      }catch(error){
+        console.error(error);
+        setTradeStatus("거래 실패: Firebase 규칙을 확인하세요.");
       }
     }
 
-    async function saveTodayPrice(newPrice, preventSecondDailyChange) {
-      if (!isAdmin || auth.currentUser?.uid !== ADMIN_UID) {
-        throw new Error("관리자 권한이 없습니다.");
-      }
+    function resizeCanvas(){
+      const ratio=Math.max(1,window.devicePixelRatio||1), rect=canvas.getBoundingClientRect();
+      canvas.width=Math.round(rect.width*ratio); canvas.height=Math.round(rect.height*ratio);
+      context.setTransform(ratio,0,0,ratio,0,0); drawChart();
+    }
+    function drawChart(){
+      const rect=canvas.getBoundingClientRect(), width=rect.width, height=rect.height;
+      context.clearRect(0,0,width,height);
+      const rows=historyRows(); $("emptyText").style.display=rows.length?"none":"flex";
+      if(!rows.length) return;
+      const prices=rows.map(([,p])=>Number(p));
+      let min=Math.min(...prices), max=Math.max(...prices);
+      if(min===max){min*=.98;max*=1.02}
+      const px=25,py=28,cw=width-px*2,ch=height-py*2;
+      const color=dailyChange().percent>=0?"#ff4d5a":"#4d9cff";
+      context.strokeStyle="#2b2b30";context.lineWidth=1;
+      for(let i=1;i<=3;i++){const y=py+ch*(i/4);context.beginPath();context.moveTo(px,y);context.lineTo(width-px,y);context.stroke()}
+      const points=prices.map((p,i)=>({x:rows.length===1?width/2:px+(i/(rows.length-1))*cw,y:py+(1-(p-min)/(max-min))*ch}));
+      context.beginPath();context.strokeStyle=color;context.lineWidth=3;context.lineCap="round";context.lineJoin="round";
+      points.forEach((pt,i)=>i?context.lineTo(pt.x,pt.y):context.moveTo(pt.x,pt.y));context.stroke();
+      const last=points.at(-1);context.beginPath();context.fillStyle=color;context.arc(last.x,last.y,5,0,Math.PI*2);context.fill();
+      context.fillStyle="#8e8e93";context.font="12px -apple-system,BlinkMacSystemFont,Segoe UI,sans-serif";
+      context.textAlign="left";context.fillText(rows[0][0].slice(5),px,height-8);
+      context.textAlign="right";context.fillText(rows.at(-1)[0].slice(5),width-px,height-8);
+    }
 
-      const snapshot = await get(stockRef);
-      const current = snapshot.exists()
-        ? snapshot.val()
-        : { currentPrice: DEFAULT_PRICE, history: {}, updatedDate: "" };
-
-      const today = todayInKorea();
-
-      if (preventSecondDailyChange && current.updatedDate === today) {
-        throw new Error(
-          "오늘 등락은 이미 반영했습니다. 잘못 입력했다면 ‘오늘 현재가 수정’을 사용하세요."
-        );
-      }
-
-      const history = trimHistory({
-        ...(current.history || {}),
-        [today]: Math.round(newPrice)
+    function showAdmin(){
+      $("adminPanel").classList.add("show");
+      $("adminPanel").scrollIntoView({behavior:"smooth",block:"start"});
+    }
+    async function saveTodayPrice(newPrice,preventDuplicate){
+      if(!adminIsLoggedIn||adminAuth.currentUser?.uid!==ADMIN_UID) throw new Error("관리자 권한이 없습니다.");
+      const snapshot=await get(adminStockReference);
+      const current=snapshot.exists()?snapshot.val():{currentPrice:DEFAULT_PRICE,history:{},updatedDate:""};
+      const today=todayInKorea();
+      if(preventDuplicate&&current.updatedDate===today) throw new Error("오늘 등락은 이미 반영했습니다. 현재가 수정 버튼을 사용하세요.");
+      const history=trimHistory({...current.history,[today]:Math.round(newPrice)});
+      await set(adminStockReference,{currentPrice:Math.round(newPrice),history,updatedDate:today,updatedAt:serverTimestamp()});
+    }
+    function watchAllPlayers(){
+      if(playersUnsubscribe) playersUnsubscribe();
+      playersUnsubscribe=onValue(adminPlayersReference,snapshot=>{
+        const players=snapshot.exists()?snapshot.val():{};
+        renderAllPlayers(players);
+      },error=>{
+        console.error(error);
+        setAdminStatus("전체 계좌 읽기 실패: Database 규칙을 확인하세요.");
       });
-
-      await set(stockRef, {
-        currentPrice: Math.round(newPrice),
-        history,
-        updatedDate: today,
-        updatedAt: serverTimestamp()
-      });
+    }
+    function renderAllPlayers(playersObject){
+      const players=Object.entries(playersObject||{}).map(([uid,p])=>({uid,...normalizePlayer(p)}));
+      const price=currentPrice();
+      players.sort((a,b)=>(b.cash+b.shares*price)-(a.cash+a.shares*price));
+      $("playerCount").textContent=`${players.length.toLocaleString("ko-KR")}명`;
+      $("allShares").textContent=`${players.reduce((s,p)=>s+p.shares,0).toLocaleString("ko-KR")}주`;
+      $("allAssets").textContent=formatWon(players.reduce((s,p)=>s+p.cash+p.shares*price,0));
+      const list=$("playersList");list.innerHTML="";
+      if(!players.length){list.innerHTML='<div class="empty-row">아직 참가자가 없습니다.</div>';return}
+      for(const p of players){
+        const s=accountStats(p),row=document.createElement("div");row.className="player-row";
+        row.innerHTML=`
+          <div class="player-name">${escapeHtml(p.nickname||"이름 없음")}</div>
+          <div><div class="player-label">현금</div>${formatWon(p.cash)}</div>
+          <div><div class="player-label">보유</div>${p.shares.toLocaleString("ko-KR")}주</div>
+          <div><div class="player-label">평균가</div>${p.shares?formatWon(s.average):"-"}</div>
+          <div><div class="player-label">총자산</div>${formatWon(s.total)}</div>
+          <div class="player-profit ${s.profit>=0?"positive":"negative"}"><div class="player-label">손익</div>${s.profit>0?"+":""}${Math.round(s.profit).toLocaleString("ko-KR")}원</div>`;
+        list.appendChild(row);
+      }
+    }
+    function escapeHtml(value){
+      return String(value).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[c]));
     }
 
-    $("loginBtn").addEventListener("click", async () => {
-      const email = $("adminEmail").value.trim();
-      const password = $("adminPassword").value;
+    $("nicknameButton").addEventListener("click",createPlayer);
+    $("nicknameInput").addEventListener("keydown",e=>{if(e.key==="Enter")createPlayer()});
+    $("buyButton").addEventListener("click",()=>trade("buy"));
+    $("sellButton").addEventListener("click",()=>trade("sell"));
 
-      if (!email || !password) {
-        setStatus("이메일과 비밀번호를 입력하세요.");
-        return;
-      }
-
-      try {
-        $("loginBtn").disabled = true;
-        setStatus("로그인 중...");
-
-        await setPersistence(auth, browserSessionPersistence);
-        const result = await signInWithEmailAndPassword(auth, email, password);
-
-        if (result.user.uid !== ADMIN_UID) {
-          await signOut(auth);
-          throw new Error("관리자 UID가 아닌 계정입니다.");
-        }
-
-        setStatus("관리자로 로그인했습니다.");
-      } catch (error) {
-        console.error(error);
-        setStatus("로그인 실패: 이메일 또는 비밀번호를 확인하세요.");
-      } finally {
-        $("loginBtn").disabled = false;
-      }
+    $("adminLoginButton").addEventListener("click",async()=>{
+      const email=$("adminEmail").value.trim(),password=$("adminPassword").value;
+      if(!email||!password){setAdminStatus("이메일과 비밀번호를 입력하세요.");return}
+      try{
+        $("adminLoginButton").disabled=true;setAdminStatus("로그인 중...");
+        await setPersistence(adminAuth,browserSessionPersistence);
+        const result=await signInWithEmailAndPassword(adminAuth,email,password);
+        if(result.user.uid!==ADMIN_UID){await signOut(adminAuth);throw new Error("관리자 계정이 아닙니다.")}
+        setAdminStatus("관리자로 로그인했습니다.");
+      }catch(error){console.error(error);setAdminStatus("로그인 실패: 이메일 또는 비밀번호를 확인하세요.")}
+      finally{$("adminLoginButton").disabled=false}
+    });
+    $("adminLogoutButton").addEventListener("click",()=>signOut(adminAuth));
+    $("applyButton").addEventListener("click",async()=>{
+      const percent=Number($("percentInput").value);
+      if(!Number.isFinite(percent)){setAdminStatus("등락률을 숫자로 입력하세요.");return}
+      try{
+        $("applyButton").disabled=true;
+        const snap=await get(adminStockReference),current=snap.exists()?snap.val():stockData;
+        const next=Math.round(Number(current.currentPrice||DEFAULT_PRICE)*(1+percent/100));
+        if(next<=0) throw new Error("주가는 1원 이상이어야 합니다.");
+        await saveTodayPrice(next,true);$("percentInput").value="";setAdminStatus(`오늘 주가를 ${formatWon(next)}으로 확정했습니다.`);
+      }catch(error){console.error(error);setAdminStatus(error.message||"저장하지 못했습니다.")}
+      finally{$("applyButton").disabled=false}
+    });
+    $("setPriceButton").addEventListener("click",async()=>{
+      const next=Number($("priceInput").value);
+      if(!Number.isFinite(next)||next<=0){setAdminStatus("1원 이상의 현재가를 입력하세요.");return}
+      try{
+        $("setPriceButton").disabled=true;await saveTodayPrice(Math.round(next),false);
+        $("priceInput").value="";setAdminStatus(`오늘 현재가를 ${formatWon(next)}으로 수정했습니다.`);
+      }catch(error){console.error(error);setAdminStatus(error.message||"저장하지 못했습니다.")}
+      finally{$("setPriceButton").disabled=false}
     });
 
-    $("applyBtn").addEventListener("click", async () => {
-      const percent = Number($("percentInput").value);
-
-      if (!Number.isFinite(percent)) {
-        setStatus("등락률을 숫자로 입력하세요.");
-        return;
-      }
-
-      try {
-        $("applyBtn").disabled = true;
-
-        const snapshot = await get(stockRef);
-        const current = snapshot.exists() ? snapshot.val() : stockData;
-        const currentPrice = Number(current.currentPrice || DEFAULT_PRICE);
-        const newPrice = Math.round(currentPrice * (1 + percent / 100));
-
-        if (newPrice <= 0) {
-          throw new Error("계산된 주가가 1원 미만입니다.");
-        }
-
-        await saveTodayPrice(newPrice, true);
-        $("percentInput").value = "";
-        setStatus(`오늘 주가를 ${formatWon(newPrice)}으로 확정했습니다.`);
-      } catch (error) {
-        console.error(error);
-        setStatus(error.message || "저장하지 못했습니다.");
-      } finally {
-        $("applyBtn").disabled = false;
+    onAuthStateChanged(playerAuth,user=>{
+      playerUser=user;
+      if(user) watchPlayer(user.uid);
+    });
+    onAuthStateChanged(adminAuth,user=>{
+      adminIsLoggedIn=Boolean(user&&user.uid===ADMIN_UID);
+      $("adminControls").classList.toggle("show",adminIsLoggedIn);
+      $("adminLoginArea").style.display=adminIsLoggedIn?"none":"block";
+      if(adminIsLoggedIn) watchAllPlayers();
+      else{
+        if(playersUnsubscribe){playersUnsubscribe();playersUnsubscribe=null}
+        $("playersList").innerHTML='<div class="empty-row">관리자 로그인 후 표시됩니다.</div>';
       }
     });
-
-    $("setPriceBtn").addEventListener("click", async () => {
-      const newPrice = Number($("priceInput").value);
-
-      if (!Number.isFinite(newPrice) || newPrice <= 0) {
-        setStatus("1원 이상의 현재가를 입력하세요.");
-        return;
+    onValue(stockReference,snapshot=>{
+      stockData=snapshot.exists()?snapshot.val():{currentPrice:DEFAULT_PRICE,history:{},updatedDate:""};
+      renderStock();
+      if(adminIsLoggedIn&&playersUnsubscribe){
+        // 참가자 자산은 주가가 바뀌면 실시간으로 다시 계산됨
+        get(adminPlayersReference).then(s=>renderAllPlayers(s.exists()?s.val():{}));
       }
-
-      try {
-        $("setPriceBtn").disabled = true;
-        await saveTodayPrice(Math.round(newPrice), false);
-        $("priceInput").value = "";
-        setStatus(`오늘 현재가를 ${formatWon(newPrice)}으로 수정했습니다.`);
-      } catch (error) {
-        console.error(error);
-        setStatus(error.message || "저장하지 못했습니다.");
-      } finally {
-        $("setPriceBtn").disabled = false;
-      }
+    },error=>{
+      console.error(error);$("dateLabel").textContent="주가 읽기 실패: Database 규칙을 확인하세요.";
     });
 
-    $("logoutBtn").addEventListener("click", async () => {
-      await signOut(auth);
-      setStatus("로그아웃했습니다.");
+    let titleClicks=0,titleTimer;
+    $("stockTitle").addEventListener("click",()=>{
+      titleClicks++;clearTimeout(titleTimer);titleTimer=setTimeout(()=>titleClicks=0,1800);
+      if(titleClicks>=5){titleClicks=0;showAdmin()}
     });
+    if(location.hash==="#admin") showAdmin();
+    window.addEventListener("resize",resizeCanvas);
 
-    onAuthStateChanged(auth, async (user) => {
-      isAdmin = Boolean(user && user.uid === ADMIN_UID);
-
-      $("controls").classList.toggle("show", isAdmin);
-      $("loginArea").style.display = isAdmin ? "none" : "block";
-
-      if (isAdmin) {
-        try {
-          await createInitialDataIfNeeded();
-        } catch (error) {
-          console.error(error);
-          setStatus("초기 데이터 생성 실패: Realtime Database 규칙을 확인하세요.");
-        }
-      }
-    });
-
-    onValue(
-      stockRef,
-      (snapshot) => {
-        stockData = snapshot.exists()
-          ? snapshot.val()
-          : { currentPrice: DEFAULT_PRICE, history: {}, updatedDate: "" };
-
-        render();
-      },
-      (error) => {
-        console.error(error);
-        $("dateLabel").textContent = "데이터 읽기 실패: Database 규칙을 확인하세요.";
-      }
-    );
-
-    let titleClicks = 0;
-    let clickResetTimer;
-
-    $("stockTitle").addEventListener("click", () => {
-      titleClicks += 1;
-      clearTimeout(clickResetTimer);
-      clickResetTimer = setTimeout(() => { titleClicks = 0; }, 1800);
-
-      if (titleClicks >= 5) {
-        titleClicks = 0;
-        showAdminPanel();
-      }
-    });
-
-    if (location.hash === "#admin") {
-      showAdminPanel();
-    }
-
-    window.addEventListener("resize", resizeCanvas);
-
-    render();
+    renderStock();
     requestAnimationFrame(resizeCanvas);
+    ensureAnonymousUser().catch(error=>{
+      console.error(error);
+      setTradeStatus("익명 계정 연결 실패: Firebase Authentication에서 익명 로그인을 켜주세요.");
+    });
   </script>
 </body>
 </html>
