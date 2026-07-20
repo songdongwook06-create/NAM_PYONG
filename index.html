@@ -563,7 +563,7 @@
             <h3>자동 시장 일정</h3>
             <div class="notice" style="margin-top:0">
               프리장: 16:00~23:00 · 분당 최대 ±5%<br>
-              정규장: 23:00~다음 날 06:00 · 분당 최대 ±25%<br>
+              정규장: 23:00~다음 날 06:00 · 분당 최대 ±2.5%, 시초가 기준 전체 ±25%<br>
               시초가 미설정: 프리장 마지막 가격으로 자동 정규장 진행<br>
               장 마감: 06:00~16:00 · 가격 고정 및 거래 불가
             </div>
@@ -619,7 +619,7 @@
       setPersistence, browserLocalPersistence, browserSessionPersistence
     } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-auth.js";
     import {
-      getDatabase, ref, onValue, get, set, push, remove, runTransaction, serverTimestamp
+      getDatabase, ref, onValue, get, set, update, push, remove, runTransaction, serverTimestamp
     } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-database.js";
 
     const firebaseConfig = {
@@ -643,6 +643,7 @@
     const KST_OFFSET = 9 * 60 * 60 * 1000;
     const PREMARKET_MAX_RATE = 0.05;
     const REGULAR_MAX_RATE = 0.25;
+    const REGULAR_STEP_MAX_RATE = 0.025;
     const PREMARKET_START_MINUTE = 16 * 60;
     const REGULAR_START_MINUTE = 23 * 60;
     const REGULAR_END_MINUTE = 6 * 60;
@@ -672,6 +673,7 @@
     const rankingsReference = ref(playerDatabase, "rankings");
     const rankExclusionsReference = ref(playerDatabase, "rankExclusions");
     const newsReference = ref(playerDatabase, "news");
+    const chartArchiveReference = ref(playerDatabase, "chartArchive");
     const serverOffsetReference = ref(playerDatabase, ".info/serverTimeOffset");
     const adminPlayersReference = ref(adminDatabase, "players");
 
@@ -693,6 +695,10 @@
     let rankExclusionsData = {};
     let allPlayersData = {};
     let newsData = {};
+    let chartArchiveData = {minutes:{},daily:{}};
+    let chartArchiveLoaded = false;
+    let chartArchiveSyncPromise = null;
+    let lastChartArchiveMinute = "";
     const CHART_ZOOM_LEVELS={
       m1:[60,120,240,480,720,1440],
       m5:[12,24,48,96,144,288],
@@ -825,6 +831,42 @@
         price=Math.max(1,Math.round(price*(1+rate)));
         prices.push(price);
       }
+      return prices;
+    }
+
+    function buildRegularPath(startPrice,seedText,moveCount){
+      const openingPrice=Math.max(1,Math.round(Number(startPrice)||1));
+      const lowerLimit=Math.max(
+        1,
+        Math.round(openingPrice*(1-REGULAR_MAX_RATE))
+      );
+      const upperLimit=Math.max(
+        lowerLimit,
+        Math.round(openingPrice*(1+REGULAR_MAX_RATE))
+      );
+
+      const prices=[openingPrice];
+      const random=mulberry32(hashString(seedText));
+      let price=openingPrice;
+      let momentum=(random()*2-1)*0.08;
+
+      for(let i=0;i<moveCount;i++){
+        const centered=((random()+random()+random())/3-.5)*2;
+        const event=random()<0.018 ? (random()*2-1)*0.9 : 0;
+
+        momentum=momentum*0.72 + centered*0.24 + event*0.32;
+        momentum=Math.max(-1,Math.min(1,momentum));
+
+        const rate=Math.max(
+          -REGULAR_STEP_MAX_RATE,
+          Math.min(REGULAR_STEP_MAX_RATE,momentum*REGULAR_STEP_MAX_RATE)
+        );
+
+        price=Math.round(price*(1+rate));
+        price=Math.max(lowerLimit,Math.min(upperLimit,price));
+        prices.push(Math.max(1,price));
+      }
+
       return prices;
     }
 
@@ -1020,17 +1062,53 @@
       );
     }
 
-    function cutoverRegularPath(){
-      return buildPath(
-        cutoverBridgePrice(),
+    function cutoverRegularSessionInfo(){
+      const bridgePrice=cutoverBridgePrice();
+      const config=openingConfig(MARKET_ENGINE_CUTOVER_DATE);
+      const autoPath=buildRegularPath(
+        bridgePrice,
         `${MARKET_ENGINE_CUTOVER_DATE}:regular:engine-cutover`,
-        REGULAR_MINUTES-1,
-        REGULAR_MAX_RATE
+        REGULAR_MINUTES-1
       );
+      const customPath=config
+        ? buildRegularPath(
+            config.price,
+            `${MARKET_ENGINE_CUTOVER_DATE}:regular:${config.openedAtMinute}:engine-cutover`,
+            Math.max(0,(REGULAR_MINUTES-1)-config.openedAtMinute)
+          )
+        : null;
+      return {bridgePrice,config,autoPath,customPath};
+    }
+
+    function cutoverPriceAtMinute(minute){
+      const info=cutoverRegularSessionInfo();
+      const m=Math.max(
+        0,
+        Math.min(REGULAR_MINUTES-1,Math.round(Number(minute)||0))
+      );
+
+      // 관리자가 설정한 바로 그 분에는 정확히 입력한 시초가를 찍고,
+      // 그 다음 분부터 해당 시초가를 기준으로 움직인다.
+      if(info.config && m>=info.config.openedAtMinute){
+        return info.customPath[m-info.config.openedAtMinute];
+      }
+      return info.autoPath[m];
+    }
+
+    function cutoverRegularPath(lastMinute=REGULAR_MINUTES-1){
+      const last=Math.max(
+        0,
+        Math.min(REGULAR_MINUTES-1,Math.round(Number(lastMinute)||0))
+      );
+      const prices=[];
+      for(let minute=0;minute<=last;minute++){
+        prices.push(cutoverPriceAtMinute(minute));
+      }
+      return prices;
     }
 
     function cutoverSessionClose(){
-      return cutoverRegularPath().at(-1);
+      return cutoverPriceAtMinute(REGULAR_MINUTES-1);
     }
 
     function kstTimestamp(dateText,hour,minute=0){
@@ -1065,10 +1143,9 @@
       let close=1;
 
       if(clock.sessionDate===MARKET_ENGINE_CUTOVER_DATE){
-        const path=cutoverRegularPath();
         close=clock.phase==="regular"
-          ? path[Math.max(0,Math.min(path.length-1,clock.minuteIndex))]
-          : path.at(-1);
+          ? cutoverPriceAtMinute(clock.minuteIndex)
+          : cutoverSessionClose();
       }else{
         const chart=makeChartForSession(
           clock.sessionDate,
@@ -1324,14 +1401,17 @@
     function regularSessionInfo(sessionDate,preClose){
       const config=openingConfig(sessionDate);
       const autoPath=automaticRegularEnabled(sessionDate)
-        ? buildPath(preClose,`${sessionDate}:regular:auto`,REGULAR_MINUTES-1,REGULAR_MAX_RATE)
+        ? buildRegularPath(
+            preClose,
+            `${sessionDate}:regular:auto`,
+            REGULAR_MINUTES-1
+          )
         : null;
       const customPath=config
-        ? buildPath(
+        ? buildRegularPath(
             config.price,
             `${sessionDate}:regular:${config.openedAtMinute}`,
-            Math.max(0,(REGULAR_MINUTES-1)-config.openedAtMinute),
-            REGULAR_MAX_RATE
+            Math.max(0,(REGULAR_MINUTES-1)-config.openedAtMinute)
           )
         : null;
       return {config,autoPath,customPath,preClose};
@@ -1437,14 +1517,16 @@
         sessionDate===MARKET_ENGINE_CUTOVER_DATE &&
         nowMs()>=MARKET_ENGINE_CUTOVER_MS
       ){
-        const path=cutoverRegularPath();
         const last=phase==="closed"
-          ? path.length-1
+          ? REGULAR_MINUTES-1
           : Math.max(
               0,
-              Math.min(path.length-1,Math.round(Number(currentMinuteIndex)||0))
+              Math.min(
+                REGULAR_MINUTES-1,
+                Math.round(Number(currentMinuteIndex)||0)
+              )
             );
-        const prices=path.slice(0,last+1);
+        const prices=cutoverRegularPath(last);
         const labels=prices.map((_,index)=>regularClockLabel(index));
         return {
           prices,
@@ -1998,7 +2080,7 @@
       const random=mulberry32(hashString(`${point.sessionDate}:minute:${point.sessionIndex}`));
       const phaseMax=point.phase==="premarket"
         ? PREMARKET_MAX_RATE
-        : point.phase==="regular" ? REGULAR_MAX_RATE : 0;
+        : point.phase==="regular" ? REGULAR_STEP_MAX_RATE : 0;
 
       let high=Math.max(open,close);
       let low=Math.min(open,close);
@@ -2029,7 +2111,7 @@
       };
     }
 
-    function buildMinute24HourCandles(){
+    function buildGeneratedMinute24HourCandles(){
       const timestamp=nowMs();
 
       // 현재 시각이 전환 전이면 업데이트 전 차트를 정확히 그대로 재현한다.
@@ -2219,7 +2301,7 @@
       return dailyChartCache;
     }
 
-    function buildDailyCandles(){
+    function buildGeneratedDailyCandles(){
       const timestamp=nowMs();
 
       // 전환 전에는 업데이트 전 일봉을 정확히 유지한다.
@@ -2251,6 +2333,265 @@
       return [...mergedMap.values()].sort(
         (a,b)=>dateNumber(a.sessionDate)-dateNumber(b.sessionDate)
       );
+    }
+
+    function minuteArchiveKey(candle){
+      const fullLabel=String(candle?.fullLabel || "");
+      const match=fullLabel.match(
+        /(\d{4})-(\d{2})-(\d{2})\s+(\d{2}):(\d{2})/
+      );
+      if(!match) return "";
+      return `${match[1]}${match[2]}${match[3]}${match[4]}${match[5]}`;
+    }
+
+    function dailyArchiveKey(candle){
+      const date=String(candle?.sessionDate || candle?.fullLabel || "");
+      const match=date.match(/(\d{4})-(\d{2})-(\d{2})/);
+      return match ? `${match[1]}${match[2]}${match[3]}` : "";
+    }
+
+    function normalizeMinuteArchiveCandle(value){
+      if(!value || typeof value!=="object") return null;
+      const candle={
+        open:Number(value.open),
+        high:Number(value.high),
+        low:Number(value.low),
+        close:Number(value.close),
+        volume:Math.max(0,Number(value.volume)||0),
+        label:String(value.label||""),
+        fullLabel:String(value.fullLabel||""),
+        phase:String(value.phase||"closed"),
+        sessionDate:String(value.sessionDate||"")
+      };
+      if(
+        !Number.isFinite(candle.open) ||
+        !Number.isFinite(candle.high) ||
+        !Number.isFinite(candle.low) ||
+        !Number.isFinite(candle.close) ||
+        !minuteArchiveKey(candle)
+      ){
+        return null;
+      }
+      return candle;
+    }
+
+    function normalizeDailyArchiveCandle(value){
+      if(!value || typeof value!=="object") return null;
+      const candle={
+        open:Number(value.open),
+        high:Number(value.high),
+        low:Number(value.low),
+        close:Number(value.close),
+        volume:Math.max(0,Number(value.volume)||0),
+        label:String(value.label||""),
+        fullLabel:String(value.fullLabel||""),
+        sessionDate:String(value.sessionDate||"")
+      };
+      if(
+        !Number.isFinite(candle.open) ||
+        !Number.isFinite(candle.high) ||
+        !Number.isFinite(candle.low) ||
+        !Number.isFinite(candle.close) ||
+        !dailyArchiveKey(candle)
+      ){
+        return null;
+      }
+      return candle;
+    }
+
+    function archivedMinuteCandles(){
+      return Object.entries(chartArchiveData?.minutes || {})
+        .map(([key,value])=>{
+          const candle=normalizeMinuteArchiveCandle(value);
+          return candle ? {key,candle} : null;
+        })
+        .filter(Boolean)
+        .sort((a,b)=>a.key.localeCompare(b.key));
+    }
+
+    function archivedDailyCandles(){
+      return Object.entries(chartArchiveData?.daily || {})
+        .map(([key,value])=>{
+          const candle=normalizeDailyArchiveCandle(value);
+          return candle ? {key,candle} : null;
+        })
+        .filter(Boolean)
+        .sort((a,b)=>a.key.localeCompare(b.key));
+    }
+
+    function minuteCandleForArchive(candle){
+      return {
+        open:Math.max(1,Number(candle.open)||1),
+        high:Math.max(1,Number(candle.high)||1),
+        low:Math.max(1,Number(candle.low)||1),
+        close:Math.max(1,Number(candle.close)||1),
+        volume:Math.max(0,Math.round(Number(candle.volume)||0)),
+        label:String(candle.label||""),
+        fullLabel:String(candle.fullLabel||""),
+        phase:String(candle.phase||"closed"),
+        sessionDate:String(candle.sessionDate||"")
+      };
+    }
+
+    function dailyCandleForArchive(candle){
+      return {
+        open:Math.max(1,Number(candle.open)||1),
+        high:Math.max(1,Number(candle.high)||1),
+        low:Math.max(1,Number(candle.low)||1),
+        close:Math.max(1,Number(candle.close)||1),
+        volume:Math.max(0,Math.round(Number(candle.volume)||0)),
+        label:String(candle.label||""),
+        fullLabel:String(candle.fullLabel||""),
+        sessionDate:String(candle.sessionDate||"")
+      };
+    }
+
+    function buildMinute24HourCandles(){
+      const generated=buildGeneratedMinute24HourCandles();
+      const archived=archivedMinuteCandles();
+
+      if(!archived.length) return generated;
+
+      const merged=new Map();
+      for(const candle of generated){
+        const key=minuteArchiveKey(candle);
+        if(key) merged.set(key,candle);
+      }
+
+      // Firebase에 이미 저장된 봉이 항상 우선한다.
+      // 이후 코드가 바뀌어도 과거 봉은 이 값으로 고정된다.
+      for(const item of archived){
+        merged.set(item.key,item.candle);
+      }
+
+      return [...merged.entries()]
+        .sort((a,b)=>a[0].localeCompare(b[0]))
+        .map(([,candle])=>candle)
+        .slice(-1440);
+    }
+
+    function buildDailyCandles(){
+      const generated=buildGeneratedDailyCandles();
+      const archived=archivedDailyCandles();
+      if(!archived.length) return generated;
+
+      const merged=new Map();
+      for(const candle of generated){
+        const key=dailyArchiveKey(candle);
+        if(key) merged.set(key,candle);
+      }
+
+      const currentSession=String(
+        marketState.sessionDate || kstParts().date
+      );
+      const currentSessionKey=currentSession.replaceAll("-","");
+
+      for(const item of archived){
+        const isCompleted=
+          item.key<currentSessionKey ||
+          (item.key===currentSessionKey && marketState.phase==="closed");
+        if(isCompleted){
+          merged.set(item.key,item.candle);
+        }
+      }
+
+      return [...merged.entries()]
+        .sort((a,b)=>a[0].localeCompare(b[0]))
+        .map(([,candle])=>candle)
+        .slice(-730);
+    }
+
+    async function writeChartArchiveUpdates(updates){
+      const entries=Object.entries(updates);
+      const chunkSize=240;
+
+      for(let index=0;index<entries.length;index+=chunkSize){
+        const chunk=Object.fromEntries(
+          entries.slice(index,index+chunkSize)
+        );
+        await update(ref(playerDatabase),chunk);
+      }
+    }
+
+    async function syncChartArchive(){
+      if(
+        chartArchiveSyncPromise ||
+        !chartArchiveLoaded ||
+        !playerUser ||
+        !stockDataLoaded ||
+        !marketDataLoaded
+      ){
+        return chartArchiveSyncPromise;
+      }
+
+      chartArchiveSyncPromise=(async()=>{
+        const existingMinutes=chartArchiveData?.minutes || {};
+        const existingDaily=chartArchiveData?.daily || {};
+        const updates={};
+
+        // 아직 움직이고 있는 마지막 1분봉은 저장하지 않는다.
+        // 완료된 봉만 저장해야 시초가 변경 시 현재 봉이 예전 값으로 고정되지 않는다.
+        const generatedMinutes=buildGeneratedMinute24HourCandles();
+        const completedMinutes=generatedMinutes.slice(
+          0,
+          Math.max(0,generatedMinutes.length-1)
+        );
+
+        for(const candle of completedMinutes){
+          const key=minuteArchiveKey(candle);
+          if(key && !existingMinutes[key]){
+            updates[`chartArchive/minutes/${key}`]=
+              minuteCandleForArchive(candle);
+          }
+        }
+
+        // 완료된 일봉만 저장한다. 진행 중인 일봉은 계속 움직이게 둔다.
+        const currentSessionKey=String(
+          marketState.sessionDate || kstParts().date
+        ).replaceAll("-","");
+
+        for(const candle of buildGeneratedDailyCandles()){
+          const key=dailyArchiveKey(candle);
+          if(!key || existingDaily[key]) continue;
+
+          const isCompleted=
+            key<currentSessionKey ||
+            (key===currentSessionKey && marketState.phase==="closed");
+
+          if(isCompleted){
+            updates[`chartArchive/daily/${key}`]=
+              dailyCandleForArchive(candle);
+          }
+        }
+
+        const count=Object.keys(updates).length;
+        if(count){
+          await writeChartArchiveUpdates(updates);
+          if(adminIsLoggedIn){
+            setAdminStatus(
+              `차트 봉 ${count.toLocaleString("ko-KR")}개를 Firebase에 고정했습니다.`
+            );
+          }
+        }
+      })().catch(error=>{
+        console.error("차트 봉 고정 실패",error);
+        if(adminIsLoggedIn){
+          setAdminStatus(
+            "차트 봉 고정 실패: 새 Firebase Rules를 적용했는지 확인하세요."
+          );
+        }
+      }).finally(()=>{
+        chartArchiveSyncPromise=null;
+      });
+
+      return chartArchiveSyncPromise;
+    }
+
+    function scheduleChartArchiveSync(){
+      const minuteKey=String(Math.floor(nowMs()/60000));
+      if(minuteKey===lastChartArchiveMinute) return;
+      lastChartArchiveMinute=minuteKey;
+      syncChartArchive();
     }
 
     function aggregateCandles(candles, unit){
@@ -2978,29 +3319,119 @@
         setAdminStatus("관리자 로그인이 필요합니다.");
         return;
       }
+
       const clock=clockInfo();
       if(clock.phase!=="regular"){
-        setAdminStatus("시초가는 정규장 시간인 23:00~다음 날 06:00 사이에 설정할 수 있습니다.");
+        setAdminStatus(
+          "시초가는 정규장 시간인 23:00~다음 날 06:00 사이에 설정할 수 있습니다."
+        );
         return;
       }
+
       const price=Number($("openingPriceInput").value);
       if(!Number.isFinite(price)||price<1){
         setAdminStatus("1원 이상의 시초가를 입력하세요.");
         return;
       }
+
       try{
         $("setOpeningPriceButton").disabled=true;
-        const path=ref(adminDatabase,`market/openingPrices/${clock.sessionDate}`);
-        await set(path,{
-          price:Math.round(price),
+
+        const roundedPrice=Math.round(price);
+        const openingRecord={
+          price:roundedPrice,
           openedAtMinute:clock.minuteIndex,
           setAt:serverTimestamp()
-        });
+        };
+
+        const updates={
+          [`market/openingPrices/${clock.sessionDate}`]:openingRecord,
+          [`chartArchive/daily/${clock.sessionDate.replaceAll("-","")}`]:null
+        };
+
+        // 설정한 분부터 정규장 종료까지 저장돼 있던 잘못된 분봉을 삭제한다.
+        // 삭제 뒤 새 시초가 기준으로 다시 계산되어 차트에도 정확히 반영된다.
+        const regularStartTimestamp=kstTimestamp(
+          clock.sessionDate,
+          23,
+          0
+        );
+
+        for(
+          let minute=clock.minuteIndex;
+          minute<REGULAR_MINUTES;
+          minute++
+        ){
+          const parts=kstParts(
+            regularStartTimestamp+minute*60*1000
+          );
+          const key=[
+            parts.year,
+            pad2(parts.month),
+            pad2(parts.day),
+            pad2(parts.hour),
+            pad2(parts.minute)
+          ].join("");
+          updates[`chartArchive/minutes/${key}`]=null;
+        }
+
+        await update(ref(adminDatabase),updates);
+
+        // Firebase 실시간 응답 전에도 즉시 정확한 가격을 화면에 반영한다.
+        marketData={
+          ...(marketData||{}),
+          openingPrices:{
+            ...(marketData?.openingPrices||{}),
+            [clock.sessionDate]:{
+              price:roundedPrice,
+              openedAtMinute:clock.minuteIndex,
+              setAt:Date.now()
+            }
+          }
+        };
+
+        const localMinutes={...(chartArchiveData?.minutes||{})};
+        const openingKeyParts=kstParts(
+          regularStartTimestamp+clock.minuteIndex*60*1000
+        );
+        const openingKey=[
+          openingKeyParts.year,
+          pad2(openingKeyParts.month),
+          pad2(openingKeyParts.day),
+          pad2(openingKeyParts.hour),
+          pad2(openingKeyParts.minute)
+        ].join("");
+
+        for(const key of Object.keys(localMinutes)){
+          if(key>=openingKey) delete localMinutes[key];
+        }
+
+        const localDaily={...(chartArchiveData?.daily||{})};
+        delete localDaily[clock.sessionDate.replaceAll("-","")];
+
+        chartArchiveData={
+          minutes:localMinutes,
+          daily:localDaily
+        };
+
+        closeCache.clear();
+        legacyCloseCache.clear();
+        minuteChartCacheKey="";
+        dailyChartCacheKey="";
+        chartViewStart={m1:null,m5:null,m15:null,daily:null};
+
+        renderMarket();
+        drawChart();
+
         $("openingPriceInput").value="";
-        setAdminStatus(`${clock.sessionDate} 시초가를 ${formatWon(price)}으로 설정했습니다. 설정 시점부터 반영됩니다.`);
+        setAdminStatus(
+          `${regularClockLabel(clock.minuteIndex)} 봉을 ${formatWon(roundedPrice)}으로 즉시 변경했습니다. 다음 분부터는 분당 최대 ±2.5%, 시초가 기준 전체 ±25% 안에서 움직입니다.`
+        );
       }catch(error){
         console.error(error);
-        setAdminStatus("시초가 저장 실패: Firebase 규칙에 market 권한을 추가했는지 확인하세요.");
+        setAdminStatus(
+          "시초가 저장 실패: Firebase Rules와 관리자 로그인을 확인하세요."
+        );
       }finally{
         renderAdminMarketHelp();
       }
@@ -3049,28 +3480,104 @@
       });
     }
     async function toggleRankExclusion(uid,nickname){
-      if(!adminIsLoggedIn || adminAuth.currentUser?.uid!==ADMIN_UID) return;
+      if(!adminIsLoggedIn || adminAuth.currentUser?.uid!==ADMIN_UID){
+        setAdminStatus("관리자 로그인이 필요합니다.");
+        return;
+      }
+
       const currentlyExcluded=Boolean(rankExclusionsData[uid]);
+      const button=[...document.querySelectorAll(".rank-manage-button")]
+        .find(item=>item.dataset.uid===uid);
+
+      if(button){
+        button.disabled=true;
+        button.textContent=currentlyExcluded?"복구 중...":"제외 중...";
+      }
+
+      const exclusionPath=ref(adminDatabase,`rankExclusions/${uid}`);
+      const rankingPath=ref(adminDatabase,`rankings/${uid}`);
+
       try{
         if(currentlyExcluded){
-          await remove(ref(adminDatabase,`rankExclusions/${uid}`));
-          const player=normalizePlayer(allPlayersData?.[uid] || {});
-          await set(ref(adminDatabase,`rankings/${uid}`),{
+          const rawPlayer=allPlayersData?.[uid];
+          if(!rawPlayer){
+            throw new Error("복구할 계좌 데이터를 찾지 못했습니다.");
+          }
+
+          const player=normalizePlayer(rawPlayer);
+          const rankingSummary={
             nickname:player.nickname || nickname || "이름 없음",
-            cash:player.cash,
-            shares:player.shares,
-            totalCost:player.totalCost,
-            updatedAt:player.updatedAt || Date.now()
-          });
-          setAdminStatus(`${nickname} 계정을 순위에 다시 포함했습니다.`);
+            cash:Number(player.cash||0),
+            shares:Number(player.shares||0),
+            totalCost:Number(player.totalCost||0),
+            updatedAt:Number(player.updatedAt||Date.now()),
+            capitalVersion:Math.max(
+              CAPITAL_VERSION,
+              Number(player.capitalVersion||0)
+            )
+          };
+
+          // 순위 데이터를 먼저 저장하고, 저장 성공 뒤 제외 표시를 제거한다.
+          await set(rankingPath,rankingSummary);
+          await remove(exclusionPath);
+
+          // 실제 Firebase 반영 여부를 다시 읽어서 확인한다.
+          const [rankingCheck,exclusionCheck]=await Promise.all([
+            get(rankingPath),
+            get(exclusionPath)
+          ]);
+
+          if(!rankingCheck.exists() || exclusionCheck.exists()){
+            throw new Error("Firebase에서 순위 복구 결과를 확인하지 못했습니다.");
+          }
+
+          rankExclusionsData={...(rankExclusionsData||{})};
+          delete rankExclusionsData[uid];
+          rankingsData={
+            ...(rankingsData||{}),
+            [uid]:rankingCheck.val()
+          };
+
+          renderAllPlayers(allPlayersData);
+          renderLeaderboard();
+          setAdminStatus(`${nickname} 계정의 순위 복구가 완료되었습니다.`);
         }else{
-          await set(ref(adminDatabase,`rankExclusions/${uid}`),true);
-          await remove(ref(adminDatabase,`rankings/${uid}`));
-          setAdminStatus(`${nickname} 계정을 순위에서 제외했습니다. 계좌 데이터는 유지됩니다.`);
+          await set(exclusionPath,true);
+          await remove(rankingPath);
+
+          const [rankingCheck,exclusionCheck]=await Promise.all([
+            get(rankingPath),
+            get(exclusionPath)
+          ]);
+
+          if(rankingCheck.exists() || exclusionCheck.val()!==true){
+            throw new Error("Firebase에서 순위 제외 결과를 확인하지 못했습니다.");
+          }
+
+          rankExclusionsData={...(rankExclusionsData||{}),[uid]:true};
+          rankingsData={...(rankingsData||{})};
+          delete rankingsData[uid];
+
+          renderAllPlayers(allPlayersData);
+          renderLeaderboard();
+          setAdminStatus(`${nickname} 계정을 순위에서 제외했습니다.`);
         }
       }catch(error){
-        console.error(error);
-        setAdminStatus("순위 제외 처리 실패: 새 Firebase 규칙을 게시했는지 확인하세요.");
+        console.error("순위 복구/제외 실패",error);
+        renderAllPlayers(allPlayersData);
+        const message=String(error?.message||"");
+        const code=String(error?.code||"");
+        setAdminStatus(
+          message.includes("계좌 데이터를") ||
+          message.includes("복구 결과") ||
+          message.includes("제외 결과")
+            ? message
+            : `순위 처리 실패${code?` (${code})`:""}: Firebase Rules를 새 파일로 교체했는지 확인하세요.`
+        );
+      }finally{
+        const latestButton=[...document.querySelectorAll(".rank-manage-button")]
+          .find(item=>item.dataset.uid===uid);
+        if(latestButton) latestButton.disabled=false;
       }
     }
 
@@ -3116,6 +3623,7 @@
 
         const button=document.createElement("button");
         button.className=`rank-manage-button${excluded?" restore":""}`;
+        button.dataset.uid=p.uid;
         button.textContent=excluded?"순위 복구":"순위 제외";
         button.addEventListener("click",()=>toggleRankExclusion(p.uid,p.nickname||"이름 없음"));
 
@@ -3175,7 +3683,10 @@
 
     onAuthStateChanged(playerAuth,user=>{
       playerUser=user;
-      if(user) watchPlayer(user.uid);
+      if(user){
+        watchPlayer(user.uid);
+        syncChartArchive();
+      }
     });
     onAuthStateChanged(adminAuth,user=>{
       adminIsLoggedIn=Boolean(user&&user.uid===ADMIN_UID);
@@ -3199,6 +3710,21 @@
     },error=>{
       console.error(error);
       $("newsList").innerHTML='<div class="empty-row">뉴스를 불러오지 못했습니다. Firebase 규칙을 확인하세요.</div>';
+    });
+
+    onValue(chartArchiveReference,snapshot=>{
+      chartArchiveData=snapshot.exists()
+        ? snapshot.val()
+        : {minutes:{},daily:{}};
+      chartArchiveLoaded=true;
+      minuteChartCacheKey="";
+      dailyChartCacheKey="";
+      drawChart();
+      syncChartArchive();
+    },error=>{
+      console.error("차트 고정 데이터 읽기 실패",error);
+      chartArchiveLoaded=true;
+      chartArchiveData={minutes:{},daily:{}};
     });
 
     onValue(rankExclusionsReference,snapshot=>{
@@ -3230,6 +3756,7 @@
       minuteChartCacheKey="";
       dailyChartCacheKey="";
       renderMarket();
+      syncChartArchive();
     },error=>{
       console.error(error);
       $("dateLabel").textContent="주가 기준값 읽기 실패: Database 규칙을 확인하세요.";
@@ -3242,6 +3769,7 @@
       minuteChartCacheKey="";
       dailyChartCacheKey="";
       renderMarket();
+      syncChartArchive();
     },error=>{
       console.error(error);
       marketDataLoaded=true;
@@ -3303,9 +3831,13 @@
     });
     updateChartRangeLabel();
     renderOrderPanel();
-    setInterval(renderMarket,1000);
+    setInterval(()=>{
+      renderMarket();
+      scheduleChartArchiveSync();
+    },1000);
 
     renderMarket();
+    scheduleChartArchiveSync();
     requestAnimationFrame(resizeCanvas);
     ensureAnonymousUser().catch(error=>{
       console.error(error);
