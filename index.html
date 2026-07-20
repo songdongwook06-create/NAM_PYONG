@@ -31,7 +31,7 @@
       content:"";position:fixed;inset:0;pointer-events:none;z-index:-1;
       background:linear-gradient(110deg,rgba(255,255,255,.018),transparent 34%,rgba(49,130,246,.025))
     }
-    main{width:min(100%,980px);margin:0 auto;padding:24px 16px 60px}
+    main{width:min(100%,980px);margin:0 auto;padding:24px 16px 60px;display:flex;flex-direction:column;gap:20px}
     #stockTitle{
       padding:10px 0 38px;text-align:center;
       user-select:none;cursor:default
@@ -76,7 +76,7 @@
       border:1px solid rgba(255,255,255,.08);
       color:#d4d4d8;font-size:16px;font-weight:900;letter-spacing:.5px
     }
-    .price-box{text-align:center;margin-bottom:25px}
+    .price-box{text-align:center;margin-bottom:0}
     #price{font-size:clamp(40px,8vw,54px);font-weight:800;letter-spacing:-1.5px}
     #change{margin-top:9px;font-size:20px;font-weight:750;color:var(--up)}
     #dateLabel{margin-top:8px;color:var(--muted);font-size:13px}
@@ -88,8 +88,8 @@
     #marketStatus.open{background:rgba(49,196,141,.14);color:#57d9a5}
     #marketStatus.wait{background:rgba(255,184,77,.14);color:#ffc267}
     #marketStatus.closed{background:rgba(142,142,147,.14);color:#b5b5ba}
-    .card{margin-top:20px;padding:20px;border-radius:24px;background:rgba(23,24,27,.96);border:1px solid rgba(255,255,255,.035);box-shadow:0 16px 44px rgba(0,0,0,.18)}
-    .chart-card{padding:14px;border-radius:24px;background:rgba(23,24,27,.96);border:1px solid rgba(255,255,255,.035);box-shadow:0 16px 44px rgba(0,0,0,.18)}
+    .card{margin-top:0;padding:20px;border-radius:24px;background:rgba(23,24,27,.96);border:1px solid rgba(255,255,255,.035);box-shadow:0 16px 44px rgba(0,0,0,.18)}
+    .chart-card{margin-top:0;padding:14px;border-radius:24px;background:rgba(23,24,27,.96);border:1px solid rgba(255,255,255,.035);box-shadow:0 16px 44px rgba(0,0,0,.18)}
     .chart-plot{position:relative;height:390px;overflow:hidden;border-radius:19px;background:linear-gradient(180deg,#101114,#0c0d0f)}
     .chart-bottom-controls{margin-top:12px;display:grid;gap:10px}
     .chart-bottom-row{display:flex;align-items:center;gap:8px}
@@ -207,7 +207,7 @@
     .modal{width:min(100%,430px);padding:23px;border-radius:22px;background:var(--card);box-shadow:0 20px 80px rgba(0,0,0,.45)}
     .modal h2{margin:0 0 8px}.modal p{margin:0;color:var(--muted);font-size:13px;line-height:1.6}
     @media(max-width:760px){
-      main{padding:18px 12px 44px}.chart-plot{height:340px}
+      main{padding:18px 12px 44px;gap:16px}.chart-plot{height:340px}
       .chart-bottom-row{gap:6px}
       .chart-mode-button,.intraday-trigger{height:44px}
       .chart-mode-button,.intraday-trigger{font-size:14px}
@@ -409,6 +409,34 @@
     .brand-shell::after{
       background:rgba(244,63,140,.11);
     }
+
+    /* 최대 매수/매도 가능 수량 안내 */
+    .max-order-box{
+      display:flex;align-items:center;justify-content:space-between;gap:12px;
+      margin-top:12px;padding:14px;border-radius:14px;
+      background:#eaf3ff;border:1px solid #d9eaff
+    }
+    .max-order-copy{display:flex;flex-direction:column;min-width:0}
+    .max-order-copy span{color:#6b7684;font-size:12px;font-weight:750}
+    .max-order-copy strong{
+      margin-top:3px;color:#1967d2;font-size:21px;line-height:1.25;
+      letter-spacing:-.45px;word-break:keep-all
+    }
+    .max-order-copy small{
+      margin-top:4px;color:#8b95a1;font-size:11px;line-height:1.35
+    }
+    #maxOrderButton{
+      width:auto;flex:0 0 auto;margin:0;padding:10px 12px;
+      border-radius:10px;background:#3182f6;color:#fff;
+      font-size:12px;font-weight:850
+    }
+    #maxOrderButton:disabled{opacity:.42;cursor:not-allowed}
+    @media(max-width:440px){
+      .max-order-box{padding:13px 11px;gap:8px}
+      .max-order-copy strong{font-size:clamp(18px,5vw,21px)}
+      .max-order-copy small{font-size:10px}
+      #maxOrderButton{padding:10px 9px;font-size:11px}
+    }
   </style>
 </head>
 <body>
@@ -486,6 +514,16 @@
           <span id="orderGuide">주문 가능 현금</span>
           <strong id="orderAvailable">₩300,000,000</strong>
         </div>
+
+        <div class="max-order-box" id="maxOrderBox">
+          <div class="max-order-copy">
+            <span id="maxOrderLabel">현재가 기준 최대 매수</span>
+            <strong id="maxOrderQuantity">계산 중...</strong>
+            <small id="maxOrderDetail">현재 가격을 불러오고 있습니다.</small>
+          </div>
+          <button type="button" id="maxOrderButton">최대 입력</button>
+        </div>
+
         <input id="orderQuantity" type="number" min="1" step="1" inputmode="numeric" placeholder="매수 수량">
         <button class="buy order-action" id="orderButton">현재가로 매수</button>
       </div>
@@ -614,6 +652,13 @@
     const AUTO_REGULAR_START_DATE = "2026-07-20";
     const CHART_HISTORY_START_DATE = "2026-07-15";
 
+    // 기존 차트가 업데이트 순간 바뀌지 않도록 오늘 23:00까지는
+    // 이전 시장 엔진을 그대로 사용하고 23:00부터 새 시간표로 이어 붙인다.
+    const MARKET_ENGINE_CUTOVER_MS = Date.parse("2026-07-20T23:00:00+09:00");
+    const MARKET_ENGINE_CUTOVER_DATE = "2026-07-20";
+    const LEGACY_PREMARKET_MINUTES = 6 * 60;
+    const LEGACY_REGULAR_MINUTES = 2 * 60;
+
     const playerApp = initializeApp(firebaseConfig);
     const adminApp = initializeApp(firebaseConfig, "nam-pyong-admin");
 
@@ -672,6 +717,7 @@
     };
 
     const closeCache = new Map();
+    const legacyCloseCache = new Map();
 
     function formatWon(value){
       return "₩" + Math.round(Number(value || 0)).toLocaleString("ko-KR");
@@ -781,6 +827,486 @@
       }
       return prices;
     }
+
+    function firebaseAnchorInfo(){
+      const fallbackDate=stockData.updatedDate || kstParts().date;
+      const date=/^\d{4}-\d{2}-\d{2}$/.test(String(marketData.anchorDate||""))
+        ? marketData.anchorDate : fallbackDate;
+      const savedPrice=Number(marketData.anchorPrice || stockData.currentPrice);
+      const price=Math.max(
+        1,
+        Math.round(Number.isFinite(savedPrice) && savedPrice>0 ? savedPrice : DEFAULT_PRICE)
+      );
+      return {date,price};
+    }
+
+    function legacyOpeningConfig(sessionDate){
+      const value=marketData?.openingPrices?.[sessionDate];
+      if(!value || !Number.isFinite(Number(value.price)) || Number(value.price)<=0) return null;
+      return {
+        price:Math.round(Number(value.price)),
+        openedAtMinute:Math.max(
+          0,
+          Math.min(LEGACY_REGULAR_MINUTES-1,Math.round(Number(value.openedAtMinute || 0)))
+        ),
+        setAt:Number(value.setAt || 0)
+      };
+    }
+
+    function legacyRegularSessionInfo(sessionDate,preClose){
+      const config=legacyOpeningConfig(sessionDate);
+      const autoPath=automaticRegularEnabled(sessionDate)
+        ? buildPath(
+            preClose,
+            `${sessionDate}:regular:auto`,
+            LEGACY_REGULAR_MINUTES-1,
+            REGULAR_MAX_RATE
+          )
+        : null;
+      const customPath=config
+        ? buildPath(
+            config.price,
+            `${sessionDate}:regular:${config.openedAtMinute}`,
+            Math.max(0,(LEGACY_REGULAR_MINUTES-1)-config.openedAtMinute),
+            REGULAR_MAX_RATE
+          )
+        : null;
+      return {config,autoPath,customPath,preClose};
+    }
+
+    function legacyRegularPriceAtMinute(info,minute){
+      const m=Math.max(
+        0,
+        Math.min(LEGACY_REGULAR_MINUTES-1,Math.round(Number(minute)||0))
+      );
+      if(info.config && m>=info.config.openedAtMinute){
+        return info.customPath[m-info.config.openedAtMinute];
+      }
+      if(info.autoPath) return info.autoPath[m];
+      return info.preClose;
+    }
+
+    function legacySessionCloseFromBase(sessionDate,basePrice){
+      const prePath=buildPath(
+        basePrice,
+        `${sessionDate}:premarket`,
+        LEGACY_PREMARKET_MINUTES-1,
+        PREMARKET_MAX_RATE
+      );
+      const regularInfo=legacyRegularSessionInfo(sessionDate,prePath.at(-1));
+      return legacyRegularPriceAtMinute(
+        regularInfo,
+        LEGACY_REGULAR_MINUTES-1
+      );
+    }
+
+    function legacyPreviousCloseFor(sessionDate){
+      const anchor=firebaseAnchorInfo();
+      if(dateNumber(sessionDate)<=dateNumber(anchor.date)) return anchor.price;
+      const cacheKey=[
+        anchor.date,
+        anchor.price,
+        sessionDate,
+        JSON.stringify(marketData.openingPrices||{})
+      ].join("|");
+      if(legacyCloseCache.has(cacheKey)) return legacyCloseCache.get(cacheKey);
+
+      let price=anchor.price;
+      let day=addDays(anchor.date,1);
+      while(dateNumber(day)<dateNumber(sessionDate)){
+        price=legacySessionCloseFromBase(day,price);
+        day=addDays(day,1);
+      }
+      legacyCloseCache.set(cacheKey,price);
+      return price;
+    }
+
+    function legacyClockInfo(timestamp=nowMs()){
+      const p=kstParts(timestamp);
+      const minuteOfDay=p.hour*60+p.minute;
+
+      if(p.hour>=18){
+        return {
+          ...p,
+          sessionDate:addDays(p.date,1),
+          phase:"premarket",
+          minuteIndex:(p.hour-18)*60+p.minute
+        };
+      }
+
+      if(p.hour<2){
+        return {
+          ...p,
+          sessionDate:p.date,
+          phase:"regular",
+          minuteIndex:minuteOfDay
+        };
+      }
+
+      return {
+        ...p,
+        sessionDate:p.date,
+        phase:"closed",
+        minuteIndex:minuteOfDay
+      };
+    }
+
+    function legacyMakeChartForSession(sessionDate,phase,currentMinuteIndex){
+      const base=legacyPreviousCloseFor(sessionDate);
+      const prePath=buildPath(
+        base,
+        `${sessionDate}:premarket`,
+        LEGACY_PREMARKET_MINUTES-1,
+        PREMARKET_MAX_RATE
+      );
+      const prices=[];
+      const labels=[];
+
+      const preLast=phase==="premarket"
+        ? Math.max(
+            0,
+            Math.min(LEGACY_PREMARKET_MINUTES-1,currentMinuteIndex)
+          )
+        : LEGACY_PREMARKET_MINUTES-1;
+
+      for(let m=0;m<=preLast;m++){
+        prices.push(prePath[m]);
+        labels.push(`${pad2(18+Math.floor(m/60))}:${pad2(m%60)}`);
+      }
+
+      if(phase==="premarket"){
+        return {prices,labels,base,preClose:prePath.at(-1)};
+      }
+
+      const preClose=prePath.at(-1);
+      const regularInfo=legacyRegularSessionInfo(sessionDate,preClose);
+      const regularLast=phase==="closed"
+        ? LEGACY_REGULAR_MINUTES-1
+        : Math.max(
+            0,
+            Math.min(LEGACY_REGULAR_MINUTES-1,currentMinuteIndex)
+          );
+
+      for(let m=0;m<=regularLast;m++){
+        prices.push(legacyRegularPriceAtMinute(regularInfo,m));
+        labels.push(`${pad2(Math.floor(m/60))}:${pad2(m%60)}`);
+      }
+
+      return {prices,labels,base,preClose};
+    }
+
+    function legacyCalculateMarketState(timestamp=nowMs()){
+      const clock=legacyClockInfo(timestamp);
+      const chart=legacyMakeChartForSession(
+        clock.sessionDate,
+        clock.phase,
+        clock.minuteIndex
+      );
+      return {
+        ...clock,
+        price:chart.prices.at(-1) || chart.base,
+        previousClose:chart.base,
+        chartPrices:chart.prices,
+        chartLabels:chart.labels
+      };
+    }
+
+    function cutoverBridgePrice(){
+      return Math.max(
+        1,
+        Math.round(
+          legacyCalculateMarketState(MARKET_ENGINE_CUTOVER_MS-60000).price
+        )
+      );
+    }
+
+    function cutoverRegularPath(){
+      return buildPath(
+        cutoverBridgePrice(),
+        `${MARKET_ENGINE_CUTOVER_DATE}:regular:engine-cutover`,
+        REGULAR_MINUTES-1,
+        REGULAR_MAX_RATE
+      );
+    }
+
+    function cutoverSessionClose(){
+      return cutoverRegularPath().at(-1);
+    }
+
+    function kstTimestamp(dateText,hour,minute=0){
+      const [year,month,day]=String(dateText).split("-").map(Number);
+      return Date.UTC(year,month-1,day,hour-9,minute,0,0);
+    }
+
+    function legacyPointAtTimestamp(timestamp){
+      const p=kstParts(timestamp);
+      const state=legacyCalculateMarketState(timestamp);
+      return {
+        close:Math.max(1,Number(state.price)||1),
+        phase:state.phase,
+        label:`${pad2(p.hour)}:${pad2(p.minute)}`,
+        sessionDate:state.sessionDate,
+        sessionIndex:state.phase==="premarket"
+          ? state.minuteIndex
+          : state.phase==="regular"
+            ? LEGACY_PREMARKET_MINUTES+state.minuteIndex
+            : LEGACY_PREMARKET_MINUTES+LEGACY_REGULAR_MINUTES+state.minuteIndex,
+        fullLabel:`${p.date} ${pad2(p.hour)}:${pad2(p.minute)}`
+      };
+    }
+
+    function hybridPointAtTimestamp(timestamp){
+      if(timestamp<MARKET_ENGINE_CUTOVER_MS){
+        return legacyPointAtTimestamp(timestamp);
+      }
+
+      const p=kstParts(timestamp);
+      const clock=clockInfo(timestamp);
+      let close=1;
+
+      if(clock.sessionDate===MARKET_ENGINE_CUTOVER_DATE){
+        const path=cutoverRegularPath();
+        close=clock.phase==="regular"
+          ? path[Math.max(0,Math.min(path.length-1,clock.minuteIndex))]
+          : path.at(-1);
+      }else{
+        const chart=makeChartForSession(
+          clock.sessionDate,
+          clock.phase,
+          clock.minuteIndex
+        );
+        close=chart.prices.at(-1) || chart.base;
+      }
+
+      return {
+        close:Math.max(1,Number(close)||1),
+        phase:clock.phase,
+        label:`${pad2(p.hour)}:${pad2(p.minute)}`,
+        sessionDate:clock.sessionDate,
+        sessionIndex:clock.phase==="premarket"
+          ? clock.minuteIndex
+          : clock.phase==="regular"
+            ? PREMARKET_MINUTES+clock.minuteIndex
+            : PREMARKET_MINUTES+REGULAR_MINUTES+clock.minuteIndex,
+        fullLabel:`${p.date} ${pad2(p.hour)}:${pad2(p.minute)}`
+      };
+    }
+
+    function legacySessionMinutePoints(sessionDate){
+      const base=legacyPreviousCloseFor(sessionDate);
+      const prePath=buildPath(
+        base,
+        `${sessionDate}:premarket`,
+        LEGACY_PREMARKET_MINUTES-1,
+        PREMARKET_MAX_RATE
+      );
+      const preClose=prePath.at(-1);
+      const regularInfo=legacyRegularSessionInfo(sessionDate,preClose);
+      const points=[];
+
+      for(let index=0;index<1440;index++){
+        let close=base;
+        let phase="closed";
+        let label="";
+        let displayDate=sessionDate;
+
+        if(index<LEGACY_PREMARKET_MINUTES){
+          close=prePath[index];
+          phase="premarket";
+          const hour=18+Math.floor(index/60);
+          label=`${pad2(hour)}:${pad2(index%60)}`;
+          displayDate=addDays(sessionDate,-1);
+        }else if(index<LEGACY_PREMARKET_MINUTES+LEGACY_REGULAR_MINUTES){
+          const minute=index-LEGACY_PREMARKET_MINUTES;
+          close=legacyRegularPriceAtMinute(regularInfo,minute);
+          phase="regular";
+          label=`${pad2(Math.floor(minute/60))}:${pad2(minute%60)}`;
+        }else{
+          const minuteOfDay=index-LEGACY_PREMARKET_MINUTES;
+          close=legacyRegularPriceAtMinute(
+            regularInfo,
+            LEGACY_REGULAR_MINUTES-1
+          );
+          phase="closed";
+          label=`${pad2(Math.floor(minuteOfDay/60))}:${pad2(minuteOfDay%60)}`;
+        }
+
+        points.push({
+          close:Math.max(1,Number(close)||1),
+          phase,
+          label,
+          sessionDate,
+          sessionIndex:index,
+          fullLabel:`${displayDate} ${label}`
+        });
+      }
+      return points;
+    }
+
+    function legacyCurrentSessionElapsedMinutes(timestamp=nowMs()){
+      const p=kstParts(timestamp);
+      if(p.hour>=18) return (p.hour-18)*60+p.minute+1;
+      return LEGACY_PREMARKET_MINUTES+p.hour*60+p.minute+1;
+    }
+
+    function legacyBuildMinute24HourCandlesAt(timestamp=nowMs()){
+      const clock=legacyClockInfo(timestamp);
+      const elapsed=Math.max(
+        1,
+        Math.min(1440,legacyCurrentSessionElapsedMinutes(timestamp))
+      );
+      const current=legacySessionMinutePoints(clock.sessionDate).slice(0,elapsed);
+      const previous=legacySessionMinutePoints(addDays(clock.sessionDate,-1));
+      const windowPoints=[...previous,...current].slice(-1441);
+      const candles=[];
+
+      for(let i=1;i<windowPoints.length;i++){
+        candles.push(
+          minuteCandleFromPoints(windowPoints[i],windowPoints[i-1])
+        );
+      }
+      return candles.slice(-1440);
+    }
+
+    function legacyDailyCandleFromSessionAt(
+      sessionDate,
+      base,
+      isCurrent,
+      legacyState
+    ){
+      const phase=isCurrent?legacyState.phase:"closed";
+      const minuteIndex=isCurrent
+        ? legacyState.minuteIndex
+        : LEGACY_REGULAR_MINUTES-1;
+      const chart=legacyMakeChartForSession(
+        sessionDate,
+        phase,
+        minuteIndex
+      );
+      const prices=chart.prices || [base];
+      const open=Math.max(1,Number(prices[0]||base||1));
+      const close=Math.max(1,Number(prices.at(-1)||open));
+      const random=mulberry32(hashString(`${sessionDate}:daily-volume`));
+      const movement=Math.abs(close-open)/Math.max(1,open);
+      const volume=Math.round(
+        15000+random()*70000+movement*600000
+      );
+
+      return {
+        open,
+        high:Math.max(open,close,...prices.map(Number)),
+        low:Math.max(1,Math.min(open,close,...prices.map(Number))),
+        close,
+        volume,
+        label:sessionDate.slice(5),
+        fullLabel:sessionDate,
+        sessionDate
+      };
+    }
+
+    function legacyBuildDailyCandlesAt(timestamp=nowMs()){
+      const legacyState=legacyCalculateMarketState(timestamp);
+      const anchor=firebaseAnchorInfo();
+      const currentDate=legacyState.sessionDate || kstParts(timestamp).date;
+      const explicitHistory=stockData?.history &&
+        typeof stockData.history==="object"
+        ? stockData.history
+        : {};
+      const startDate=dateNumber(CHART_HISTORY_START_DATE)<=dateNumber(currentDate)
+        ? CHART_HISTORY_START_DATE
+        : currentDate;
+
+      const candles=[];
+      const historicalCloses={};
+      const anchorDate=dateNumber(anchor.date)<dateNumber(startDate)
+        ? startDate
+        : anchor.date;
+
+      let nextClose=Math.max(
+        1,
+        Math.round(Number(anchor.price||stockData.currentPrice||DEFAULT_PRICE))
+      );
+      let backwardDay=addDays(anchorDate,-1);
+      let backwardGuard=0;
+
+      while(
+        dateNumber(backwardDay)>=dateNumber(startDate) &&
+        backwardGuard<730
+      ){
+        const explicit=Number(explicitHistory[backwardDay]);
+        const close=Number.isFinite(explicit) && explicit>0
+          ? Math.round(explicit)
+          : generatedPreviousHistoricalClose(backwardDay,nextClose);
+        historicalCloses[backwardDay]=Math.max(1,close);
+        nextClose=historicalCloses[backwardDay];
+        backwardDay=addDays(backwardDay,-1);
+        backwardGuard++;
+      }
+
+      let day=startDate;
+      let previousClose=historicalCloses[day] ||
+        Math.max(
+          1,
+          Math.round(Number(anchor.price||stockData.currentPrice||DEFAULT_PRICE))
+        );
+      let guard=0;
+
+      while(
+        dateNumber(day)<dateNumber(anchorDate) &&
+        dateNumber(day)<=dateNumber(currentDate) &&
+        guard<730
+      ){
+        const close=historicalCloses[day] || previousClose;
+        const open=day===startDate ? close : previousClose;
+        const candle=historicalDailyCandle(day,open,close);
+        candles.push(candle);
+        previousClose=candle.close;
+        day=addDays(day,1);
+        guard++;
+      }
+
+      if(dateNumber(day)<dateNumber(anchorDate)){
+        day=anchorDate;
+      }
+
+      let base=Math.max(
+        1,
+        Math.round(
+          Number(anchor.price||stockData.currentPrice||previousClose||DEFAULT_PRICE)
+        )
+      );
+
+      while(dateNumber(day)<=dateNumber(currentDate) && guard<730){
+        const isCurrent=day===currentDate;
+        const candle=legacyDailyCandleFromSessionAt(
+          day,
+          base,
+          isCurrent,
+          legacyState
+        );
+        candles.push(candle);
+        base=isCurrent
+          ? candle.close
+          : legacySessionCloseFromBase(day,base);
+        day=addDays(day,1);
+        guard++;
+      }
+
+      if(!candles.length){
+        const currentPrice=Math.max(
+          1,
+          Math.round(
+            Number(legacyState.price||stockData.currentPrice||anchor.price||DEFAULT_PRICE)
+          )
+        );
+        candles.push(
+          historicalDailyCandle(currentDate,currentPrice,currentPrice)
+        );
+      }
+
+      return candles;
+    }
+
     function openingConfig(sessionDate){
       const value=marketData?.openingPrices?.[sessionDate];
       if(!value || !Number.isFinite(Number(value.price)) || Number(value.price)<=0) return null;
@@ -828,19 +1354,25 @@
     }
 
     function anchorInfo(){
-      // 기존 Firebase에 저장된 시장 기준값과 현재가를 그대로 이어서 사용한다.
-      const fallbackDate=stockData.updatedDate || kstParts().date;
-      const date=/^\d{4}-\d{2}-\d{2}$/.test(String(marketData.anchorDate||""))
-        ? marketData.anchorDate : fallbackDate;
-      const savedPrice=Number(marketData.anchorPrice || stockData.currentPrice);
-      const price=Math.max(
-        1,
-        Math.round(Number.isFinite(savedPrice) && savedPrice>0 ? savedPrice : DEFAULT_PRICE)
-      );
-      return {date,price};
+      if(nowMs()<MARKET_ENGINE_CUTOVER_MS){
+        return firebaseAnchorInfo();
+      }
+      return {
+        date:MARKET_ENGINE_CUTOVER_DATE,
+        price:cutoverSessionClose()
+      };
     }
+
     function sessionCloseFromBase(sessionDate, basePrice){
-      const prePath=buildPath(basePrice,`${sessionDate}:premarket`,PREMARKET_MINUTES-1,PREMARKET_MAX_RATE);
+      if(sessionDate===MARKET_ENGINE_CUTOVER_DATE){
+        return cutoverSessionClose();
+      }
+      const prePath=buildPath(
+        basePrice,
+        `${sessionDate}:premarket`,
+        PREMARKET_MINUTES-1,
+        PREMARKET_MAX_RATE
+      );
       const preClose=prePath.at(-1);
       const regularInfo=regularSessionInfo(sessionDate,preClose);
       return regularPriceAtMinute(regularInfo,REGULAR_MINUTES-1);
@@ -901,8 +1433,34 @@
     }
 
     function makeChartForSession(sessionDate, phase, currentMinuteIndex){
+      if(
+        sessionDate===MARKET_ENGINE_CUTOVER_DATE &&
+        nowMs()>=MARKET_ENGINE_CUTOVER_MS
+      ){
+        const path=cutoverRegularPath();
+        const last=phase==="closed"
+          ? path.length-1
+          : Math.max(
+              0,
+              Math.min(path.length-1,Math.round(Number(currentMinuteIndex)||0))
+            );
+        const prices=path.slice(0,last+1);
+        const labels=prices.map((_,index)=>regularClockLabel(index));
+        return {
+          prices,
+          labels,
+          base:cutoverBridgePrice(),
+          preClose:cutoverBridgePrice()
+        };
+      }
+
       const base=previousCloseFor(sessionDate);
-      const prePath=buildPath(base,`${sessionDate}:premarket`,PREMARKET_MINUTES-1,PREMARKET_MAX_RATE);
+      const prePath=buildPath(
+        base,
+        `${sessionDate}:premarket`,
+        PREMARKET_MINUTES-1,
+        PREMARKET_MAX_RATE
+      );
       const prices=[];
       const labels=[];
 
@@ -929,13 +1487,35 @@
         prices.push(regularPriceAtMinute(regularInfo,m));
         labels.push(regularClockLabel(m));
       }
+
       return {prices,labels,base,preClose};
     }
 
     function calculateMarketState(timestamp=nowMs()){
       const clock=clockInfo(timestamp);
-      const chart=makeChartForSession(clock.sessionDate,clock.phase,clock.minuteIndex);
-      const price=chart.prices.at(-1) || chart.base;
+      let price=1;
+      let previousClose=1;
+      let chartPrices=[];
+      let chartLabels=[];
+
+      if(timestamp<MARKET_ENGINE_CUTOVER_MS){
+        const legacy=legacyCalculateMarketState(timestamp);
+        price=legacy.price;
+        previousClose=legacy.previousClose;
+        chartPrices=legacy.chartPrices;
+        chartLabels=legacy.chartLabels;
+      }else{
+        const chart=makeChartForSession(
+          clock.sessionDate,
+          clock.phase,
+          clock.minuteIndex
+        );
+        price=chart.prices.at(-1) || chart.base;
+        previousClose=chart.base;
+        chartPrices=chart.prices;
+        chartLabels=chart.labels;
+      }
+
       let statusText="";
       let statusClass="closed";
 
@@ -952,8 +1532,13 @@
 
       return {
         ...clock,
-        price,previousClose:chart.base,canTrade:clock.phase!=="closed",statusText,statusClass,
-        chartPrices:chart.prices,chartLabels:chart.labels
+        price,
+        previousClose,
+        canTrade:clock.phase!=="closed",
+        statusText,
+        statusClass,
+        chartPrices,
+        chartLabels
       };
     }
 
@@ -1223,8 +1808,21 @@
       const entries=Object.entries(trades || {}).sort(([,a],[,b])=>Number(b.timestamp)-Number(a.timestamp)).slice(0,MAX_TRADES);
       return Object.fromEntries(entries);
     }
+    function maximumOrderQuantity(){
+      if(!playerData) return 0;
+      if(orderMode==="sell"){
+        return Math.max(0,Math.floor(Number(playerData.shares)||0));
+      }
+      const price=currentPrice();
+      if(!Number.isFinite(price) || price<=0) return 0;
+      return Math.max(0,Math.floor((Number(playerData.cash)||0)/price));
+    }
+
     function renderOrderPanel(){
       const isBuy=orderMode==="buy";
+      const price=currentPrice();
+      const maximum=maximumOrderQuantity();
+
       $("orderBuyTab").classList.toggle("buy-active",isBuy);
       $("orderSellTab").classList.toggle("sell-active",!isBuy);
       $("orderButton").classList.toggle("buy",isBuy);
@@ -1235,6 +1833,28 @@
       $("orderAvailable").textContent=isBuy
         ? formatWon(playerData?.cash || 0)
         : `${Number(playerData?.shares || 0).toLocaleString("ko-KR")}주`;
+
+      $("maxOrderLabel").textContent=isBuy
+        ? "현재가 기준 최대 매수"
+        : "최대 매도 가능";
+      $("maxOrderQuantity").textContent=playerData
+        ? `${maximum.toLocaleString("ko-KR")}주`
+        : "계좌 연결 중...";
+
+      if(!playerData){
+        $("maxOrderDetail").textContent="계좌를 불러오고 있습니다.";
+      }else if(isBuy){
+        $("maxOrderDetail").textContent=maximum>0
+          ? `${formatWon(price)} × ${maximum.toLocaleString("ko-KR")}주`
+          : "현재 현금으로 매수 가능한 수량이 없습니다.";
+      }else{
+        $("maxOrderDetail").textContent=maximum>0
+          ? `보유 수량 ${maximum.toLocaleString("ko-KR")}주 전부 입력`
+          : "현재 보유한 주식이 없습니다.";
+      }
+
+      $("maxOrderButton").textContent=isBuy?"최대 입력":"전량 입력";
+      $("maxOrderButton").disabled=!playerData || maximum<=0;
     }
 
     function setOrderMode(type){
@@ -1242,6 +1862,21 @@
       $("orderQuantity").value="";
       setTradeStatus("");
       renderOrderPanel();
+      $("orderQuantity").focus();
+    }
+
+    function fillMaximumOrderQuantity(){
+      const maximum=maximumOrderQuantity();
+      if(maximum<=0){
+        setTradeStatus(orderMode==="buy"
+          ? "현재 현금으로 매수할 수 있는 수량이 없습니다."
+          : "현재 매도할 수 있는 주식이 없습니다.");
+        return;
+      }
+      $("orderQuantity").value=String(maximum);
+      setTradeStatus(orderMode==="buy"
+        ? `최대 매수 가능 수량 ${maximum.toLocaleString("ko-KR")}주를 입력했습니다.`
+        : `보유 수량 ${maximum.toLocaleString("ko-KR")}주를 전부 입력했습니다.`);
       $("orderQuantity").focus();
     }
 
@@ -1395,30 +2030,46 @@
     }
 
     function buildMinute24HourCandles(){
-      const clock=clockInfo();
-      const elapsed=Math.max(1,Math.min(1440,currentSessionElapsedMinutes()));
+      const timestamp=nowMs();
+
+      // 현재 시각이 전환 전이면 업데이트 전 차트를 정확히 그대로 재현한다.
+      if(timestamp<MARKET_ENGINE_CUTOVER_MS){
+        return legacyBuildMinute24HourCandlesAt(timestamp);
+      }
+
+      const minuteNow=Math.floor(timestamp/60000)*60000;
       const cacheKey=[
-        clock.sessionDate,elapsed,
+        "hybrid",
+        minuteNow,
         JSON.stringify(marketData.openingPrices||{}),
-        anchorInfo().date,anchorInfo().price
+        firebaseAnchorInfo().date,
+        firebaseAnchorInfo().price
       ].join("|");
 
       if(cacheKey===minuteChartCacheKey && minuteChartCache.length){
         return minuteChartCache;
       }
 
-      const current=sessionMinutePoints(clock.sessionDate).slice(0,elapsed);
-      const previous=sessionMinutePoints(addDays(clock.sessionDate,-1));
-      const combined=[...previous,...current];
-      const windowPoints=combined.slice(-1441);
-      const candles=[];
+      const legacyCandles=legacyBuildMinute24HourCandlesAt(
+        MARKET_ENGINE_CUTOVER_MS-60000
+      );
+      const newCandles=[];
+      let previousPoint=legacyPointAtTimestamp(
+        MARKET_ENGINE_CUTOVER_MS-60000
+      );
 
-      for(let i=1;i<windowPoints.length;i++){
-        candles.push(minuteCandleFromPoints(windowPoints[i],windowPoints[i-1]));
+      for(
+        let pointTime=MARKET_ENGINE_CUTOVER_MS;
+        pointTime<=minuteNow;
+        pointTime+=60000
+      ){
+        const point=hybridPointAtTimestamp(pointTime);
+        newCandles.push(minuteCandleFromPoints(point,previousPoint));
+        previousPoint=point;
       }
 
       minuteChartCacheKey=cacheKey;
-      minuteChartCache=candles.slice(-1440);
+      minuteChartCache=[...legacyCandles,...newCandles].slice(-1440);
       return minuteChartCache;
     }
 
@@ -1475,7 +2126,7 @@
       return Math.max(1,Math.round(nextClose/(1+rate)));
     }
 
-    function buildDailyCandles(){
+    function buildNewDailyCandles(){
       const anchor=anchorInfo();
       const currentDate=marketState.sessionDate || kstParts().date;
       const explicitHistory=stockData?.history && typeof stockData.history==="object"
@@ -1566,6 +2217,40 @@
       dailyChartCacheKey=cacheKey;
       dailyChartCache=candles;
       return dailyChartCache;
+    }
+
+    function buildDailyCandles(){
+      const timestamp=nowMs();
+
+      // 전환 전에는 업데이트 전 일봉을 정확히 유지한다.
+      if(timestamp<MARKET_ENGINE_CUTOVER_MS){
+        return legacyBuildDailyCandlesAt(timestamp);
+      }
+
+      // 전환 이후에도 이미 만들어진 과거 일봉은 기존 모양을 고정하고,
+      // 기존 차트의 마지막 날짜 이후부터만 새 시간표 일봉을 붙인다.
+      const frozen=legacyBuildDailyCandlesAt(
+        MARKET_ENGINE_CUTOVER_MS-60000
+      );
+      const fresh=buildNewDailyCandles();
+      const frozenMap=new Map(
+        frozen.map(candle=>[candle.sessionDate,candle])
+      );
+      const mergedMap=new Map();
+
+      for(const candle of frozen){
+        mergedMap.set(candle.sessionDate,candle);
+      }
+
+      for(const candle of fresh){
+        if(!frozenMap.has(candle.sessionDate)){
+          mergedMap.set(candle.sessionDate,candle);
+        }
+      }
+
+      return [...mergedMap.values()].sort(
+        (a,b)=>dateNumber(a.sessionDate)-dateNumber(b.sessionDate)
+      );
     }
 
     function aggregateCandles(candles, unit){
@@ -2446,6 +3131,7 @@
     $("nicknameInput").addEventListener("keydown",e=>{if(e.key==="Enter")createPlayer()});
     $("orderBuyTab").addEventListener("click",()=>setOrderMode("buy"));
     $("orderSellTab").addEventListener("click",()=>setOrderMode("sell"));
+    $("maxOrderButton").addEventListener("click",fillMaximumOrderQuantity);
     $("orderButton").addEventListener("click",()=>trade());
     $("orderQuantity").addEventListener("keydown",event=>{
       if(event.key==="Enter") trade();
@@ -2540,6 +3226,7 @@
       stockData=snapshot.exists()?snapshot.val():{currentPrice:DEFAULT_PRICE,history:{},updatedDate:""};
       stockDataLoaded=true;
       closeCache.clear();
+      legacyCloseCache.clear();
       minuteChartCacheKey="";
       dailyChartCacheKey="";
       renderMarket();
@@ -2551,6 +3238,7 @@
       marketData=snapshot.exists()?snapshot.val():{anchorDate:"",anchorPrice:0,openingPrices:{}};
       marketDataLoaded=true;
       closeCache.clear();
+      legacyCloseCache.clear();
       minuteChartCacheKey="";
       dailyChartCacheKey="";
       renderMarket();
@@ -2559,6 +3247,7 @@
       marketDataLoaded=true;
       marketData={anchorDate:"",anchorPrice:0,openingPrices:{}};
       closeCache.clear();
+      legacyCloseCache.clear();
       minuteChartCacheKey="";
       dailyChartCacheKey="";
       renderMarket();
