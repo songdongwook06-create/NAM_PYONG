@@ -557,6 +557,7 @@
             <h3>오늘 시초가 설정</h3>
             <input id="openingPriceInput" type="number" min="1" step="1" placeholder="예: 100000">
             <button class="primary" id="setOpeningPriceButton">시초가 설정 · 정규장 열기</button>
+            <button class="secondary" id="resetTodayAutoButton" style="margin-top:10px">오늘 차트 초기화 · 자동 차트 복구</button>
             <div class="status" id="openingPriceHelp"></div>
           </div>
           <div class="box">
@@ -929,8 +930,10 @@
     }
 
     function legacySessionCloseFromBase(sessionDate,basePrice){
+      const resetBase=sessionBasePriceOverride(sessionDate);
+      const effectiveBase=resetBase || basePrice;
       const prePath=buildPath(
-        basePrice,
+        effectiveBase,
         `${sessionDate}:premarket`,
         LEGACY_PREMARKET_MINUTES-1,
         PREMARKET_MAX_RATE
@@ -943,6 +946,9 @@
     }
 
     function legacyPreviousCloseFor(sessionDate){
+      const resetBase=sessionBasePriceOverride(sessionDate);
+      if(resetBase) return resetBase;
+
       const anchor=firebaseAnchorInfo();
       if(dateNumber(sessionDate)<=dateNumber(anchor.date)) return anchor.price;
       const cacheKey=[
@@ -1053,7 +1059,21 @@
       };
     }
 
+    function sessionBasePriceOverride(sessionDate){
+      const value=Number(
+        marketData?.sessionBasePrices?.[sessionDate]
+      );
+      return Number.isFinite(value) && value>0
+        ? Math.max(1,Math.round(value))
+        : 0;
+    }
+
     function cutoverBridgePrice(){
+      const override=sessionBasePriceOverride(
+        MARKET_ENGINE_CUTOVER_DATE
+      );
+      if(override) return override;
+
       return Math.max(
         1,
         Math.round(
@@ -1549,8 +1569,11 @@
       if(sessionDate===MARKET_ENGINE_CUTOVER_DATE){
         return cutoverSessionClose();
       }
+
+      const resetBase=sessionBasePriceOverride(sessionDate);
+      const effectiveBase=resetBase || basePrice;
       const prePath=buildPath(
-        basePrice,
+        effectiveBase,
         `${sessionDate}:premarket`,
         PREMARKET_MINUTES-1,
         PREMARKET_MAX_RATE
@@ -1560,9 +1583,19 @@
       return regularPriceAtMinute(regularInfo,REGULAR_MINUTES-1);
     }
     function previousCloseFor(sessionDate){
+      const resetBase=sessionBasePriceOverride(sessionDate);
+      if(resetBase) return resetBase;
+
       const anchor=anchorInfo();
       if(dateNumber(sessionDate)<=dateNumber(anchor.date)) return anchor.price;
-      const cacheKey=`${anchor.date}|${anchor.price}|${sessionDate}|${JSON.stringify(marketData.openingPrices||{})}`;
+      const cacheKey=[
+        anchor.date,
+        anchor.price,
+        sessionDate,
+        JSON.stringify(marketData.openingPrices||{}),
+        JSON.stringify(marketData.priceOverrides||{}),
+        JSON.stringify(marketData.sessionBasePrices||{})
+      ].join("|");
       if(closeCache.has(cacheKey)) return closeCache.get(cacheKey);
       let price=anchor.price;
       let day=addDays(anchor.date,1);
@@ -2350,7 +2383,10 @@
 
       const cacheKey=[
         startDate,currentDate,marketState.phase,marketState.minuteIndex,
+        Math.round(Number(marketState.price)||0),
         JSON.stringify(marketData.openingPrices||{}),
+        JSON.stringify(marketData.priceOverrides||{}),
+        JSON.stringify(marketData.sessionBasePrices||{}),
         JSON.stringify(explicitHistory),
         anchor.date,anchor.price
       ].join("|");
@@ -2432,6 +2468,49 @@
       return dailyChartCache;
     }
 
+    function liveCurrentDailyCandle(){
+      const sessionDate=String(
+        marketState.sessionDate || kstParts().date
+      );
+      const base=previousCloseFor(sessionDate);
+      const candle=dailyCandleFromSession(
+        sessionDate,
+        base,
+        true
+      );
+      const livePrice=Math.max(
+        1,
+        Math.round(
+          Number(
+            marketState.price ||
+            stockData.currentPrice ||
+            candle.close ||
+            base
+          ) || 1
+        )
+      );
+
+      // 진행 중인 오늘 일봉 종가는 상단 현재가와 반드시 같아야 한다.
+      candle.close=livePrice;
+      candle.high=Math.max(
+        Number(candle.high)||livePrice,
+        Number(candle.open)||livePrice,
+        livePrice
+      );
+      candle.low=Math.max(
+        1,
+        Math.min(
+          Number(candle.low)||livePrice,
+          Number(candle.open)||livePrice,
+          livePrice
+        )
+      );
+      candle.sessionDate=sessionDate;
+      candle.label=sessionDate.slice(5);
+      candle.fullLabel=sessionDate;
+      return candle;
+    }
+
     function buildGeneratedDailyCandles(){
       const timestamp=nowMs();
 
@@ -2455,11 +2534,24 @@
         mergedMap.set(candle.sessionDate,candle);
       }
 
+      const currentSession=String(
+        marketState.sessionDate || kstParts().date
+      );
+
       for(const candle of fresh){
-        if(!frozenMap.has(candle.sessionDate)){
+        if(
+          !frozenMap.has(candle.sessionDate) ||
+          candle.sessionDate===currentSession
+        ){
           mergedMap.set(candle.sessionDate,candle);
         }
       }
+
+      // 오늘 진행 중인 일봉은 항상 실시간 현재가로 다시 덮어쓴다.
+      mergedMap.set(
+        currentSession,
+        liveCurrentDailyCandle()
+      );
 
       return [...mergedMap.values()].sort(
         (a,b)=>dateNumber(a.sessionDate)-dateNumber(b.sessionDate)
@@ -2658,6 +2750,19 @@
         if(isCompleted){
           merged.set(item.key,item.candle);
         }
+      }
+
+      const currentLiveCandle=liveCurrentDailyCandle();
+      const currentLiveKey=dailyArchiveKey(
+        currentLiveCandle
+      );
+
+      // 진행 중인 오늘 봉은 저장된 옛 일봉이나 과거 생성값보다 우선한다.
+      if(marketState.phase!=="closed" && currentLiveKey){
+        merged.set(
+          currentLiveKey,
+          currentLiveCandle
+        );
       }
 
       return [...merged.entries()]
@@ -3212,8 +3317,18 @@
 
       // 현재가 점선
       const latest=candles.at(-1);
-      const currentY=yForPrice(latest.close);
-      const currentColor=latest.close>=latest.open?"#ff4d5a":"#4d9cff";
+      const displayedCurrentPrice=chartMode==="daily"
+        ? Math.max(
+            1,
+            Math.round(
+              Number(marketState.price||latest.close)||1
+            )
+          )
+        : latest.close;
+      const currentY=yForPrice(displayedCurrentPrice);
+      const currentColor=displayedCurrentPrice>=latest.open
+        ? "#ff4d5a"
+        : "#4d9cff";
       context.strokeStyle=currentColor;
       context.setLineDash([4,4]);
       context.beginPath();
@@ -3223,7 +3338,11 @@
       context.setLineDash([]);
       context.fillStyle=currentColor;
       context.textAlign="left";
-      context.fillText(Math.round(latest.close).toLocaleString("ko-KR"),width-right+7,currentY-5);
+      context.fillText(
+        Math.round(displayedCurrentPrice).toLocaleString("ko-KR"),
+        width-right+7,
+        currentY-5
+      );
 
       // 시간축
       const labelIndexes=[0,Math.floor((candles.length-1)/2),candles.length-1]
@@ -3466,16 +3585,19 @@
       if(!$("openingPriceHelp")) return;
       const clock=clockInfo();
       const button=$("setOpeningPriceButton");
+      const resetButton=$("resetTodayAutoButton");
       const config=openingConfig(clock.sessionDate);
 
       if(clock.phase==="regular"){
         button.disabled=!adminIsLoggedIn;
+        if(resetButton) resetButton.disabled=!adminIsLoggedIn;
         $("openingPriceHelp").textContent=config
           ? `${clock.sessionDate} 시초가 ${formatWon(config.price)} · ${regularClockLabel(config.openedAtMinute)} 설정`
           : `${clock.sessionDate} 시초가 미설정 · 프리장 종가 기준으로 자동 정규장 진행 중`;
       }else{
         button.disabled=true;
-        $("openingPriceHelp").textContent="시초가는 정규장 시간인 23:00~다음 날 06:00 사이에 설정할 수 있습니다.";
+        if(resetButton) resetButton.disabled=true;
+        $("openingPriceHelp").textContent="시초가와 오늘 차트 초기화는 정규장 시간인 23:00~다음 날 06:00 사이에 사용할 수 있습니다.";
       }
     }
 
@@ -3658,6 +3780,148 @@
           "시초가 저장 실패: Firebase Rules와 관리자 로그인을 확인하세요."
         );
       }finally{
+        renderAdminMarketHelp();
+      }
+    }
+
+    async function resetTodaySessionToAutomatic(){
+      if(!adminIsLoggedIn || adminAuth.currentUser?.uid!==ADMIN_UID){
+        setAdminStatus("관리자 로그인이 필요합니다.");
+        return;
+      }
+
+      const clock=clockInfo();
+      if(clock.phase!=="regular"){
+        setAdminStatus(
+          "오늘 자동 차트 복구는 정규장 시간인 23:00~다음 날 06:00 사이에만 가능합니다."
+        );
+        return;
+      }
+
+      const confirmed=window.confirm(
+        `${clock.sessionDate} 세션의 시초가 설정과 오늘 저장 차트를 지우고, 시초가를 설정하지 않았던 자동 차트로 되돌릴까요?`
+      );
+      if(!confirmed) return;
+
+      const button=$("resetTodayAutoButton");
+      const sessionDate=clock.sessionDate;
+      const sessionDateKey=sessionDate.replaceAll("-","");
+      const sessionStart=kstTimestamp(sessionDate,16,0);
+      const sessionEnd=sessionStart+SESSION_MINUTES*60*1000;
+
+      try{
+        button.disabled=true;
+        button.textContent="자동 차트 복구 중...";
+
+        // 오늘 세션에 적용된 시초가·강제 기준가를 모두 삭제한다.
+        await update(ref(adminDatabase),{
+          [`market/sessionBasePrices/${sessionDate}`]:null,
+          [`market/openingPrices/${sessionDate}`]:null,
+          [`market/priceOverrides/${sessionDate}`]:null,
+          [`chartArchive/daily/${sessionDateKey}`]:null
+        });
+
+        // 오늘 세션의 저장된 1분봉을 모두 삭제한다.
+        // 삭제 후 시초가를 설정하지 않았을 때의 자동 가격 경로로 다시 계산된다.
+        const deleteEntries=[];
+
+        for(
+          let timestamp=sessionStart;
+          timestamp<sessionEnd;
+          timestamp+=60000
+        ){
+          const parts=kstParts(timestamp);
+          const key=[
+            parts.year,
+            pad2(parts.month),
+            pad2(parts.day),
+            pad2(parts.hour),
+            pad2(parts.minute)
+          ].join("");
+
+          deleteEntries.push([
+            `chartArchive/minutes/${key}`,
+            null
+          ]);
+        }
+
+        for(let index=0;index<deleteEntries.length;index+=220){
+          await update(
+            ref(adminDatabase),
+            Object.fromEntries(
+              deleteEntries.slice(index,index+220)
+            )
+          );
+        }
+
+        // 실시간 Firebase 응답 전에도 로컬 화면을 바로 자동 차트 상태로 바꾼다.
+        const localSessionBase={
+          ...(marketData?.sessionBasePrices||{})
+        };
+        const localOpenings={
+          ...(marketData?.openingPrices||{})
+        };
+        const localOverrides={
+          ...(marketData?.priceOverrides||{})
+        };
+
+        delete localSessionBase[sessionDate];
+        delete localOpenings[sessionDate];
+        delete localOverrides[sessionDate];
+
+        marketData={
+          ...(marketData||{}),
+          sessionBasePrices:localSessionBase,
+          openingPrices:localOpenings,
+          priceOverrides:localOverrides
+        };
+
+        const localMinutes={...(chartArchiveData?.minutes||{})};
+
+        for(const key of Object.keys(localMinutes)){
+          const keyTimestamp=Date.parse(
+            `${key.slice(0,4)}-${key.slice(4,6)}-${key.slice(6,8)}T${key.slice(8,10)}:${key.slice(10,12)}:00+09:00`
+          );
+
+          if(
+            Number.isFinite(keyTimestamp) &&
+            keyTimestamp>=sessionStart &&
+            keyTimestamp<sessionEnd
+          ){
+            delete localMinutes[key];
+          }
+        }
+
+        const localDaily={...(chartArchiveData?.daily||{})};
+        delete localDaily[sessionDateKey];
+
+        chartArchiveData={
+          minutes:localMinutes,
+          daily:localDaily
+        };
+
+        closeCache.clear();
+        legacyCloseCache.clear();
+        minuteChartCacheKey="";
+        dailyChartCacheKey="";
+        chartViewStart={m1:null,m5:null,m15:null,daily:null};
+
+        renderMarket();
+        drawChart();
+
+        // 자동으로 다시 생성된 완료 봉만 Firebase에 새로 고정한다.
+        await syncChartArchive();
+
+        setAdminStatus(
+          `${sessionDate} 시초가 설정과 오늘 저장 차트를 삭제했습니다. 현재는 시초가를 설정하지 않았던 자동 차트 상태입니다. 이제 원하는 시초가를 새로 입력하면 됩니다.`
+        );
+      }catch(error){
+        console.error("오늘 자동 차트 복구 실패",error);
+        setAdminStatus(
+          "오늘 자동 차트 복구 실패: Firebase Rules와 관리자 로그인을 확인하세요."
+        );
+      }finally{
+        button.textContent="오늘 차트 초기화 · 자동 차트 복구";
         renderAdminMarketHelp();
       }
     }
@@ -3870,6 +4134,7 @@
       if(event.key==="Enter") trade();
     });
     $("setOpeningPriceButton").addEventListener("click",setOpeningPrice);
+    $("resetTodayAutoButton").addEventListener("click",resetTodaySessionToAutomatic);
     $("intradayMenuButton").addEventListener("click",event=>{
       event.stopPropagation();
       $("intradayMenu").classList.toggle("show");
