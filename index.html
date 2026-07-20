@@ -3170,19 +3170,26 @@
       return Math.max(0,Math.min(candles.length-1,rawIndex));
     }
 
-    function drawChartTouchGuide(candles,left,right,top,priceBottom,slot,yForPrice,width,height,leadingSlots=0,guideBottom=priceBottom){
+    function drawChartTouchGuide(
+      candles,left,right,top,priceBottom,slot,yForPrice,
+      width,height,leadingSlots=0,guideBottom=priceBottom
+    ){
       if(!chartHoverVisible || chartHoverX==null || !candles.length) return;
 
       const plotRight=width-right;
       const localX=Math.max(left,Math.min(plotRight-0.01,chartHoverX));
-      const rawIndex=Math.floor((localX-left)/Math.max(slot,0.0001))-leadingSlots;
+      const rawIndex=
+        Math.floor((localX-left)/Math.max(slot,0.0001))-leadingSlots;
       const index=Math.max(0,Math.min(candles.length-1,rawIndex));
       const candle=candles[index];
       const x=left+(leadingSlots+index+.5)*slot;
       const closeY=yForPrice(candle.close);
+      const highY=yForPrice(candle.high);
+      const lowY=yForPrice(candle.low);
 
       context.save();
 
+      // 세로 십자선
       context.strokeStyle="rgba(190,198,210,.62)";
       context.lineWidth=1;
       context.setLineDash([4,4]);
@@ -3190,31 +3197,71 @@
       context.moveTo(x,top);
       context.lineTo(x,guideBottom);
       context.stroke();
+
+      // 고가/저가 위치에 짧은 가로선 표시
+      context.strokeStyle="rgba(255,255,255,.32)";
+      context.beginPath();
+      context.moveTo(Math.max(left,x-16),highY);
+      context.lineTo(Math.min(plotRight,x+16),highY);
+      context.moveTo(Math.max(left,x-16),lowY);
+      context.lineTo(Math.min(plotRight,x+16),lowY);
+      context.stroke();
       context.setLineDash([]);
 
-      context.fillStyle="#3182f6";
+      // 선택한 종가 점
+      context.fillStyle="#8fc0ff";
       context.beginPath();
       context.arc(x,closeY,3.2,0,Math.PI*2);
       context.fill();
 
-      const label=chartDateLabel(candle);
+      const dateLabel=chartDateLabel(candle);
+      const highText=`최고 ${Math.round(Number(candle.high)||0).toLocaleString("ko-KR")}원`;
+      const lowText=`최저 ${Math.round(Number(candle.low)||0).toLocaleString("ko-KR")}원`;
+
       context.font="700 12px -apple-system,BlinkMacSystemFont,Segoe UI,sans-serif";
-      const textWidth=context.measureText(label).width;
-      const pillWidth=Math.ceil(textWidth+20);
-      const pillHeight=28;
-      const pillX=Math.max(6,Math.min(width-pillWidth-6,x-pillWidth/2));
-      const pillY=Math.max(top+5,priceBottom-pillHeight-6);
+      const textWidth=Math.max(
+        context.measureText(dateLabel).width,
+        context.measureText(highText).width,
+        context.measureText(lowText).width
+      );
+
+      const pillWidth=Math.min(
+        width-12,
+        Math.max(150,Math.ceil(textWidth+24))
+      );
+      const pillHeight=72;
+      const preferRight=x+12;
+      const preferLeft=x-pillWidth-12;
+      const pillX=preferRight+pillWidth<=width-6
+        ? preferRight
+        : Math.max(6,preferLeft);
+      const pillY=Math.max(
+        top+6,
+        Math.min(priceBottom-pillHeight-6,closeY-pillHeight/2)
+      );
 
       context.fillStyle="rgba(19,23,34,.97)";
-      roundedRectPath(context,pillX,pillY,pillWidth,pillHeight,9);
+      roundedRectPath(
+        context,pillX,pillY,pillWidth,pillHeight,10
+      );
       context.fill();
       context.strokeStyle="rgba(255,255,255,.12)";
+      context.lineWidth=1;
       context.stroke();
 
-      context.fillStyle="#fff";
-      context.textAlign="center";
+      context.textAlign="left";
       context.textBaseline="middle";
-      context.fillText(label,pillX+pillWidth/2,pillY+pillHeight/2+.5);
+
+      context.fillStyle="#ffffff";
+      context.font="800 12px -apple-system,BlinkMacSystemFont,Segoe UI,sans-serif";
+      context.fillText(dateLabel,pillX+12,pillY+16);
+
+      context.fillStyle="#f23645";
+      context.font="750 12px -apple-system,BlinkMacSystemFont,Segoe UI,sans-serif";
+      context.fillText(highText,pillX+12,pillY+38);
+
+      context.fillStyle="#5b8cff";
+      context.fillText(lowText,pillX+12,pillY+58);
 
       context.restore();
     }
