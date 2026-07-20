@@ -1064,20 +1064,32 @@
 
     function cutoverRegularSessionInfo(){
       const bridgePrice=cutoverBridgePrice();
-      const config=openingConfig(MARKET_ENGINE_CUTOVER_DATE);
+      const overrides=priceOverridesFor(MARKET_ENGINE_CUTOVER_DATE);
       const autoPath=buildRegularPath(
         bridgePrice,
         `${MARKET_ENGINE_CUTOVER_DATE}:regular:engine-cutover`,
         REGULAR_MINUTES-1
       );
-      const customPath=config
-        ? buildRegularPath(
-            config.price,
-            `${MARKET_ENGINE_CUTOVER_DATE}:regular:${config.openedAtMinute}:engine-cutover`,
-            Math.max(0,(REGULAR_MINUTES-1)-config.openedAtMinute)
+
+      const overridePaths=overrides.map(config=>({
+        config,
+        path:buildRegularPath(
+          config.price,
+          `${MARKET_ENGINE_CUTOVER_DATE}:regular:${config.openedAtMinute}:${config.setAt||0}:engine-cutover`,
+          Math.max(
+            0,
+            (REGULAR_MINUTES-1)-config.openedAtMinute
           )
-        : null;
-      return {bridgePrice,config,autoPath,customPath};
+        )
+      }));
+
+      return {
+        bridgePrice,
+        config:overrides.at(-1)||null,
+        overrides,
+        overridePaths,
+        autoPath
+      };
     }
 
     function cutoverPriceAtMinute(minute){
@@ -1086,11 +1098,14 @@
         0,
         Math.min(REGULAR_MINUTES-1,Math.round(Number(minute)||0))
       );
+      const active=info.overridePaths
+        .filter(item=>item.config.openedAtMinute<=m)
+        .at(-1);
 
-      // 관리자가 설정한 바로 그 분에는 정확히 입력한 시초가를 찍고,
-      // 그 다음 분부터 해당 시초가를 기준으로 움직인다.
-      if(info.config && m>=info.config.openedAtMinute){
-        return info.customPath[m-info.config.openedAtMinute];
+      // 설정한 바로 그 분은 정확히 입력한 가격,
+      // 다음 분부터는 해당 가격을 기준으로 움직인다.
+      if(active){
+        return active.path[m-active.config.openedAtMinute];
       }
       return info.autoPath[m];
     }
@@ -1384,14 +1399,82 @@
       return candles;
     }
 
-    function openingConfig(sessionDate){
-      const value=marketData?.openingPrices?.[sessionDate];
-      if(!value || !Number.isFinite(Number(value.price)) || Number(value.price)<=0) return null;
+    function normalizePriceOverride(value,minuteFallback=0){
+      if(
+        !value ||
+        !Number.isFinite(Number(value.price)) ||
+        Number(value.price)<=0
+      ){
+        return null;
+      }
+
       return {
         price:Math.round(Number(value.price)),
-        openedAtMinute:Math.max(0,Math.min(REGULAR_MINUTES-1,Math.round(Number(value.openedAtMinute || 0)))),
+        openedAtMinute:Math.max(
+          0,
+          Math.min(
+            REGULAR_MINUTES-1,
+            Math.round(
+              Number(
+                value.openedAtMinute ??
+                value.minute ??
+                minuteFallback
+              ) || 0
+            )
+          )
+        ),
+        referencePrice:Math.max(
+          0,
+          Math.round(Number(value.referencePrice || 0))
+        ),
         setAt:Number(value.setAt || 0)
       };
+    }
+
+    function priceOverridesFor(sessionDate){
+      const rows=[];
+      const history=marketData?.priceOverrides?.[sessionDate];
+
+      if(history && typeof history==="object"){
+        for(const [key,value] of Object.entries(history)){
+          const fallback=Number(key);
+          const normalized=normalizePriceOverride(
+            value,
+            Number.isFinite(fallback)?fallback:0
+          );
+          if(normalized) rows.push(normalized);
+        }
+      }
+
+      // 이전 버전에서 저장한 단일 시초가도 그대로 읽는다.
+      const legacy=normalizePriceOverride(
+        marketData?.openingPrices?.[sessionDate]
+      );
+      if(
+        legacy &&
+        !rows.some(item=>item.openedAtMinute===legacy.openedAtMinute)
+      ){
+        rows.push(legacy);
+      }
+
+      return rows.sort((a,b)=>
+        a.openedAtMinute-b.openedAtMinute ||
+        a.setAt-b.setAt
+      );
+    }
+
+    function openingConfig(sessionDate){
+      return priceOverridesFor(sessionDate).at(-1) || null;
+    }
+
+    function activePriceOverride(sessionDate,minute){
+      const m=Math.max(
+        0,
+        Math.min(REGULAR_MINUTES-1,Math.round(Number(minute)||0))
+      );
+      const rows=priceOverridesFor(sessionDate)
+        .filter(item=>item.openedAtMinute<=m);
+      return rows.at(-1) || null;
     }
 
     function automaticRegularEnabled(sessionDate){
@@ -1399,7 +1482,7 @@
     }
 
     function regularSessionInfo(sessionDate,preClose){
-      const config=openingConfig(sessionDate);
+      const overrides=priceOverridesFor(sessionDate);
       const autoPath=automaticRegularEnabled(sessionDate)
         ? buildRegularPath(
             preClose,
@@ -1407,20 +1490,39 @@
             REGULAR_MINUTES-1
           )
         : null;
-      const customPath=config
-        ? buildRegularPath(
-            config.price,
-            `${sessionDate}:regular:${config.openedAtMinute}`,
-            Math.max(0,(REGULAR_MINUTES-1)-config.openedAtMinute)
+
+      const overridePaths=overrides.map(config=>({
+        config,
+        path:buildRegularPath(
+          config.price,
+          `${sessionDate}:regular:${config.openedAtMinute}:${config.setAt||0}`,
+          Math.max(
+            0,
+            (REGULAR_MINUTES-1)-config.openedAtMinute
           )
-        : null;
-      return {config,autoPath,customPath,preClose};
+        )
+      }));
+
+      return {
+        config:overrides.at(-1)||null,
+        overrides,
+        overridePaths,
+        autoPath,
+        preClose
+      };
     }
 
     function regularPriceAtMinute(info,minute){
-      const m=Math.max(0,Math.min(REGULAR_MINUTES-1,Math.round(Number(minute)||0)));
-      if(info.config && m>=info.config.openedAtMinute){
-        return info.customPath[m-info.config.openedAtMinute];
+      const m=Math.max(
+        0,
+        Math.min(REGULAR_MINUTES-1,Math.round(Number(minute)||0))
+      );
+      const active=info.overridePaths
+        .filter(item=>item.config.openedAtMinute<=m)
+        .at(-1);
+
+      if(active){
+        return active.path[m-active.config.openedAtMinute];
       }
       if(info.autoPath) return info.autoPath[m];
       return info.preClose;
@@ -1596,6 +1698,35 @@
         previousClose=chart.base;
         chartPrices=chart.prices;
         chartLabels=chart.labels;
+      }
+
+      const activeOverride=clock.phase==="regular" ||
+        clock.phase==="closed"
+        ? activePriceOverride(
+            clock.sessionDate,
+            clock.phase==="closed"
+              ? REGULAR_MINUTES-1
+              : clock.minuteIndex
+          )
+        : null;
+
+      if(activeOverride){
+        const fallbackReference=Math.max(
+          1,
+          Math.round(
+            Number(
+              stockData.currentPrice ||
+              activeOverride.price ||
+              previousClose
+            ) || 1
+          )
+        );
+        previousClose=Math.max(
+          1,
+          Math.round(
+            Number(activeOverride.referencePrice)||fallbackReference
+          )
+        );
       }
 
       let statusText="";
@@ -2464,10 +2595,44 @@
         merged.set(item.key,item.candle);
       }
 
-      return [...merged.entries()]
+      const archivedKeys=new Set(
+        archived.map(item=>item.key)
+      );
+      const ordered=[...merged.entries()]
         .sort((a,b)=>a[0].localeCompare(b[0]))
-        .map(([,candle])=>candle)
         .slice(-1440);
+
+      const result=[];
+      for(const [key,source] of ordered){
+        const candle={...source};
+        const previous=result.at(-1);
+
+        // Firebase에 고정된 봉은 그대로 사용한다.
+        // 새로 생성된 봉만 실제 직전 봉의 종가와 연결한다.
+        if(previous && !archivedKeys.has(key)){
+          const open=Math.max(1,Number(previous.close)||1);
+          const close=Math.max(1,Number(candle.close)||open);
+          const body=Math.abs(close-open);
+          const random=mulberry32(hashString(`${key}:rechain`));
+          const wick=Math.max(
+            1,
+            Math.max(open,close)*0.0012,
+            body*0.06
+          );
+
+          candle.open=open;
+          candle.close=close;
+          candle.high=Math.max(open,close)+wick*(0.2+random()*0.45);
+          candle.low=Math.max(
+            1,
+            Math.min(open,close)-wick*(0.2+random()*0.45)
+          );
+        }
+
+        result.push(candle);
+      }
+
+      return result;
     }
 
     function buildDailyCandles(){
@@ -3337,28 +3502,90 @@
       try{
         $("setOpeningPriceButton").disabled=true;
 
+        // 가격을 바꾸기 직전 화면의 실제 현재가를 기준 가격으로 저장한다.
+        const beforeState=calculateMarketState();
+        const referencePrice=Math.max(
+          1,
+          Math.round(Number(beforeState.price)||1)
+        );
         const roundedPrice=Math.round(price);
-        const openingRecord={
-          price:roundedPrice,
-          openedAtMinute:clock.minuteIndex,
-          setAt:serverTimestamp()
-        };
 
-        const updates={
-          [`market/openingPrices/${clock.sessionDate}`]:openingRecord,
-          [`chartArchive/daily/${clock.sessionDate.replaceAll("-","")}`]:null
-        };
-
-        // 설정한 분부터 정규장 종료까지 저장돼 있던 잘못된 분봉을 삭제한다.
-        // 삭제 뒤 새 시초가 기준으로 다시 계산되어 차트에도 정확히 반영된다.
         const regularStartTimestamp=kstTimestamp(
           clock.sessionDate,
           23,
           0
         );
+        const openingTimestamp=
+          regularStartTimestamp+clock.minuteIndex*60*1000;
+        const openingParts=kstParts(openingTimestamp);
+        const openingKey=[
+          openingParts.year,
+          pad2(openingParts.month),
+          pad2(openingParts.day),
+          pad2(openingParts.hour),
+          pad2(openingParts.minute)
+        ].join("");
+        const overrideKey=String(clock.minuteIndex).padStart(3,"0");
 
+        // 변경 전까지 보이던 과거 봉을 먼저 Firebase에 고정한다.
+        const visibleBefore=buildMinute24HourCandles();
+        const freezeUpdates={};
+        const localMinutes={...(chartArchiveData?.minutes||{})};
+
+        for(const candle of visibleBefore){
+          const key=minuteArchiveKey(candle);
+          if(!key || key>=openingKey) continue;
+          const saved=minuteCandleForArchive(candle);
+          freezeUpdates[`chartArchive/minutes/${key}`]=saved;
+          localMinutes[key]=saved;
+        }
+
+        const freezeEntries=Object.entries(freezeUpdates);
+        for(let index=0;index<freezeEntries.length;index+=220){
+          await update(
+            ref(adminDatabase),
+            Object.fromEntries(
+              freezeEntries.slice(index,index+220)
+            )
+          );
+        }
+
+        const openingRecord={
+          price:roundedPrice,
+          openedAtMinute:clock.minuteIndex,
+          referencePrice,
+          setAt:serverTimestamp()
+        };
+
+        const exactOpeningCandle={
+          open:referencePrice,
+          high:Math.max(referencePrice,roundedPrice),
+          low:Math.min(referencePrice,roundedPrice),
+          close:roundedPrice,
+          volume:Math.max(
+            1,
+            Math.round(
+              1600+
+              Math.abs(roundedPrice-referencePrice)/
+              Math.max(1,referencePrice)*50000
+            )
+          ),
+          label:`${pad2(openingParts.hour)}:${pad2(openingParts.minute)}`,
+          fullLabel:`${openingParts.date} ${pad2(openingParts.hour)}:${pad2(openingParts.minute)}`,
+          phase:"regular",
+          sessionDate:clock.sessionDate
+        };
+
+        const updates={
+          [`market/openingPrices/${clock.sessionDate}`]:openingRecord,
+          [`market/priceOverrides/${clock.sessionDate}/${overrideKey}`]:openingRecord,
+          [`chartArchive/daily/${clock.sessionDate.replaceAll("-","")}`]:null,
+          [`chartArchive/minutes/${openingKey}`]:exactOpeningCandle
+        };
+
+        // 설정한 다음 분부터 장 종료까지의 미리 저장된 잘못된 봉은 제거한다.
         for(
-          let minute=clock.minuteIndex;
+          let minute=clock.minuteIndex+1;
           minute<REGULAR_MINUTES;
           minute++
         ){
@@ -3373,39 +3600,35 @@
             pad2(parts.minute)
           ].join("");
           updates[`chartArchive/minutes/${key}`]=null;
+          delete localMinutes[key];
         }
 
         await update(ref(adminDatabase),updates);
 
-        // Firebase 실시간 응답 전에도 즉시 정확한 가격을 화면에 반영한다.
+        // Firebase 실시간 응답 전에도 동일한 값으로 즉시 갱신한다.
+        const localRecord={
+          price:roundedPrice,
+          openedAtMinute:clock.minuteIndex,
+          referencePrice,
+          setAt:Date.now()
+        };
+
         marketData={
           ...(marketData||{}),
           openingPrices:{
             ...(marketData?.openingPrices||{}),
+            [clock.sessionDate]:localRecord
+          },
+          priceOverrides:{
+            ...(marketData?.priceOverrides||{}),
             [clock.sessionDate]:{
-              price:roundedPrice,
-              openedAtMinute:clock.minuteIndex,
-              setAt:Date.now()
+              ...(marketData?.priceOverrides?.[clock.sessionDate]||{}),
+              [overrideKey]:localRecord
             }
           }
         };
 
-        const localMinutes={...(chartArchiveData?.minutes||{})};
-        const openingKeyParts=kstParts(
-          regularStartTimestamp+clock.minuteIndex*60*1000
-        );
-        const openingKey=[
-          openingKeyParts.year,
-          pad2(openingKeyParts.month),
-          pad2(openingKeyParts.day),
-          pad2(openingKeyParts.hour),
-          pad2(openingKeyParts.minute)
-        ].join("");
-
-        for(const key of Object.keys(localMinutes)){
-          if(key>=openingKey) delete localMinutes[key];
-        }
-
+        localMinutes[openingKey]=exactOpeningCandle;
         const localDaily={...(chartArchiveData?.daily||{})};
         delete localDaily[clock.sessionDate.replaceAll("-","")];
 
@@ -3424,8 +3647,10 @@
         drawChart();
 
         $("openingPriceInput").value="";
+        const amount=roundedPrice-referencePrice;
+        const percent=amount/referencePrice*100;
         setAdminStatus(
-          `${regularClockLabel(clock.minuteIndex)} 봉을 ${formatWon(roundedPrice)}으로 즉시 변경했습니다. 다음 분부터는 분당 최대 ±2.5%, 시초가 기준 전체 ±25% 안에서 움직입니다.`
+          `${formatWon(referencePrice)}에서 ${formatWon(roundedPrice)}으로 즉시 변경했습니다. 등락은 ${percent>=0?"+":""}${percent.toFixed(2)}%이며 차트도 같은 상승·하락 봉으로 저장됐습니다.`
         );
       }catch(error){
         console.error(error);
