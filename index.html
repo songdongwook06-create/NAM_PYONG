@@ -2474,20 +2474,44 @@
       return dailyChartCache;
     }
 
-    function minuteCandlesBySession(){
+    function minuteCalendarDate(candle){
+      const fullLabel=String(candle?.fullLabel||"");
+      const fullMatch=fullLabel.match(/^(\d{4}-\d{2}-\d{2})/);
+      if(fullMatch) return fullMatch[1];
+
+      const sessionDate=String(candle?.sessionDate||"");
+      return /^\d{4}-\d{2}-\d{2}$/.test(sessionDate)
+        ? sessionDate
+        : "";
+    }
+
+    function dailyCalendarDate(candle){
+      const fullLabel=String(candle?.fullLabel||"");
+      const fullMatch=fullLabel.match(/^(\d{4}-\d{2}-\d{2})$/);
+      if(fullMatch) return fullMatch[1];
+
+      const sessionDate=String(candle?.sessionDate||"");
+      return /^\d{4}-\d{2}-\d{2}$/.test(sessionDate)
+        ? sessionDate
+        : "";
+    }
+
+    function minuteCandlesByCalendarDate(){
       const groups=new Map();
 
       for(const candle of buildMinute24HourCandles()){
-        const sessionDate=String(candle?.sessionDate||"");
-        if(!/^\d{4}-\d{2}-\d{2}$/.test(sessionDate)) continue;
-        if(!groups.has(sessionDate)) groups.set(sessionDate,[]);
-        groups.get(sessionDate).push(candle);
+        const calendarDate=minuteCalendarDate(candle);
+        if(!calendarDate) continue;
+        if(!groups.has(calendarDate)) groups.set(calendarDate,[]);
+        groups.get(calendarDate).push(candle);
       }
 
       return groups;
     }
 
-    function dailyCandleFromActualMinutes(sessionDate,minuteCandles,isCurrent=false){
+    function dailyCandleFromActualMinutes(
+      calendarDate,minuteCandles,isCurrent=false
+    ){
       const rows=(minuteCandles||[]).filter(candle=>
         Number.isFinite(Number(candle?.open)) &&
         Number.isFinite(Number(candle?.close))
@@ -2502,7 +2526,7 @@
               : rows.at(-1)?.close
           ) ||
           Number(stockData.currentPrice) ||
-          previousCloseFor(sessionDate) ||
+          previousCloseFor(marketState.sessionDate || calendarDate) ||
           1
         )
       );
@@ -2514,9 +2538,9 @@
           low:fallbackPrice,
           close:fallbackPrice,
           volume:0,
-          label:sessionDate.slice(5),
-          fullLabel:sessionDate,
-          sessionDate
+          label:calendarDate.slice(5),
+          fullLabel:calendarDate,
+          sessionDate:calendarDate
         };
       }
 
@@ -2534,8 +2558,6 @@
             Math.round(Number(rows.at(-1).close)||fallbackPrice)
           );
 
-      // 과거 버그로 생긴 비정상적인 긴 꼬리를 무시하고,
-      // 실제 각 분봉의 시가·종가만 이용해 일봉 고가·저가를 계산한다.
       const tradedPrices=[open,close];
       let volume=0;
 
@@ -2557,71 +2579,56 @@
         low:Math.max(1,Math.min(...tradedPrices)),
         close,
         volume:Math.round(volume),
-        label:sessionDate.slice(5),
-        fullLabel:sessionDate,
-        sessionDate
+        label:calendarDate.slice(5),
+        fullLabel:calendarDate,
+        sessionDate:calendarDate
       };
     }
 
     function liveCurrentDailyCandle(){
-      const sessionDate=String(
-        marketState.sessionDate || kstParts().date
-      );
-      const displayDate=String(kstParts().date);
-      const groups=minuteCandlesBySession();
-      const candle=dailyCandleFromActualMinutes(
-        sessionDate,
-        groups.get(sessionDate)||[],
+      const currentDate=String(kstParts().date);
+      const groups=minuteCandlesByCalendarDate();
+
+      return dailyCandleFromActualMinutes(
+        currentDate,
+        groups.get(currentDate)||[],
         true
       );
-
-      // 내부 세션은 7월 20일로 유지하되,
-      // 자정을 넘긴 현재 일봉은 화면에 7월 21일로 표시한다.
-      return {
-        ...candle,
-        label:displayDate.slice(5),
-        fullLabel:displayDate
-      };
     }
 
     function rebuildRecentDailyCandlesFromMinutes(candles){
-      const groups=minuteCandlesBySession();
-      const merged=new Map(
-        (candles||[]).map(candle=>[
-          String(candle.sessionDate||candle.fullLabel||""),
-          {...candle}
-        ])
-      );
-      const currentSession=String(
-        marketState.sessionDate || kstParts().date
-      );
+      const groups=minuteCandlesByCalendarDate();
+      const merged=new Map();
 
-      for(const [sessionDate,minuteCandles] of groups){
+      for(const candle of candles||[]){
+        const calendarDate=dailyCalendarDate(candle);
+        if(calendarDate) merged.set(calendarDate,{...candle});
+      }
+
+      const currentDate=String(kstParts().date);
+
+      for(const [calendarDate,minuteCandles] of groups){
         merged.set(
-          sessionDate,
+          calendarDate,
           dailyCandleFromActualMinutes(
-            sessionDate,
+            calendarDate,
             minuteCandles,
-            sessionDate===currentSession
+            calendarDate===currentDate
           )
         );
       }
 
-      // 현재 세션은 분봉이 아직 한 개도 없어도 반드시 상단 현재가로 표시한다.
-      merged.set(currentSession,liveCurrentDailyCandle());
-
-      const currentSessionNumber=dateNumber(currentSession);
+      merged.set(currentDate,liveCurrentDailyCandle());
 
       return [...merged.values()]
         .filter(candle=>{
-          const sessionDate=String(candle.sessionDate||"");
-          return (
-            /^\d{4}-\d{2}-\d{2}$/.test(sessionDate) &&
-            dateNumber(sessionDate)<=currentSessionNumber
-          );
+          const calendarDate=dailyCalendarDate(candle);
+          return calendarDate &&
+            dateNumber(calendarDate)<=dateNumber(currentDate);
         })
         .sort((a,b)=>
-          dateNumber(a.sessionDate)-dateNumber(b.sessionDate)
+          dateNumber(dailyCalendarDate(a))-
+          dateNumber(dailyCalendarDate(b))
         )
         .slice(-730);
     }
@@ -2629,51 +2636,53 @@
     function buildGeneratedDailyCandles(){
       const timestamp=nowMs();
 
-      // 전환 전에는 업데이트 전 일봉을 정확히 유지한다.
       if(timestamp<MARKET_ENGINE_CUTOVER_MS){
         return legacyBuildDailyCandlesAt(timestamp);
       }
 
-      // 전환 이후에도 이미 만들어진 과거 일봉은 기존 모양을 고정하고,
-      // 기존 차트의 마지막 날짜 이후부터만 새 시간표 일봉을 붙인다.
       const frozen=legacyBuildDailyCandlesAt(
         MARKET_ENGINE_CUTOVER_MS-60000
       );
       const fresh=buildNewDailyCandles();
       const frozenMap=new Map(
-        frozen.map(candle=>[candle.sessionDate,candle])
+        frozen.map(candle=>[
+          dailyCalendarDate(candle),
+          candle
+        ])
       );
       const mergedMap=new Map();
 
       for(const candle of frozen){
-        mergedMap.set(candle.sessionDate,candle);
+        const calendarDate=dailyCalendarDate(candle);
+        if(calendarDate) mergedMap.set(calendarDate,candle);
       }
 
-      const currentSession=String(
-        marketState.sessionDate || kstParts().date
-      );
+      const currentDate=String(kstParts().date);
 
       for(const candle of fresh){
+        const calendarDate=dailyCalendarDate(candle);
         if(
-          !frozenMap.has(candle.sessionDate) ||
-          candle.sessionDate===currentSession
+          calendarDate &&
+          (
+            !frozenMap.has(calendarDate) ||
+            calendarDate===currentDate
+          )
         ){
-          mergedMap.set(candle.sessionDate,candle);
+          mergedMap.set(calendarDate,candle);
         }
       }
 
-      // 오늘 진행 중인 일봉은 항상 실시간 현재가로 다시 덮어쓴다.
-      mergedMap.set(
-        currentSession,
-        liveCurrentDailyCandle()
-      );
+      mergedMap.set(currentDate,liveCurrentDailyCandle());
 
       return [...mergedMap.values()]
-        .filter(candle=>
-          dateNumber(candle.sessionDate)<=dateNumber(currentSession)
-        )
-        .sort(
-          (a,b)=>dateNumber(a.sessionDate)-dateNumber(b.sessionDate)
+        .filter(candle=>{
+          const calendarDate=dailyCalendarDate(candle);
+          return calendarDate &&
+            dateNumber(calendarDate)<=dateNumber(currentDate);
+        })
+        .sort((a,b)=>
+          dateNumber(dailyCalendarDate(a))-
+          dateNumber(dailyCalendarDate(b))
         );
     }
 
@@ -2687,7 +2696,7 @@
     }
 
     function dailyArchiveKey(candle){
-      const date=String(candle?.sessionDate || candle?.fullLabel || "");
+      const date=dailyCalendarDate(candle);
       const match=date.match(/(\d{4})-(\d{2})-(\d{2})/);
       return match ? `${match[1]}${match[2]}${match[3]}` : "";
     }
@@ -2851,39 +2860,26 @@
     function buildDailyCandles(){
       const generated=buildGeneratedDailyCandles();
       const archived=archivedDailyCandles();
-      if(!archived.length) return generated;
-
       const merged=new Map();
+
       for(const candle of generated){
         const key=dailyArchiveKey(candle);
         if(key) merged.set(key,candle);
       }
 
-      const currentSession=String(
-        marketState.sessionDate || kstParts().date
-      );
-      const currentSessionKey=currentSession.replaceAll("-","");
+      const currentDate=String(kstParts().date);
+      const currentDateKey=currentDate.replaceAll("-","");
 
       for(const item of archived){
-        const isCompleted=
-          item.key<currentSessionKey ||
-          (item.key===currentSessionKey && marketState.phase==="closed");
-        if(isCompleted){
+        if(item.key<currentDateKey){
           merged.set(item.key,item.candle);
         }
       }
 
       const currentLiveCandle=liveCurrentDailyCandle();
-      const currentLiveKey=dailyArchiveKey(
-        currentLiveCandle
-      );
-
-      // 진행 중인 오늘 봉은 저장된 옛 일봉이나 과거 생성값보다 우선한다.
-      if(marketState.phase!=="closed" && currentLiveKey){
-        merged.set(
-          currentLiveKey,
-          currentLiveCandle
-        );
+      const currentLiveKey=dailyArchiveKey(currentLiveCandle);
+      if(currentLiveKey){
+        merged.set(currentLiveKey,currentLiveCandle);
       }
 
       const mergedCandles=[...merged.entries()]
@@ -2891,95 +2887,7 @@
         .map(([,candle])=>candle)
         .slice(-730);
 
-      return rebuildRecentDailyCandlesFromMinutes(
-        mergedCandles
-      );
-    }
-
-    async function writeChartArchiveUpdates(updates){
-      const entries=Object.entries(updates);
-      const chunkSize=240;
-
-      for(let index=0;index<entries.length;index+=chunkSize){
-        const chunk=Object.fromEntries(
-          entries.slice(index,index+chunkSize)
-        );
-        await update(ref(playerDatabase),chunk);
-      }
-    }
-
-    async function syncChartArchive(){
-      if(
-        chartArchiveSyncPromise ||
-        !chartArchiveLoaded ||
-        !playerUser ||
-        !stockDataLoaded ||
-        !marketDataLoaded
-      ){
-        return chartArchiveSyncPromise;
-      }
-
-      chartArchiveSyncPromise=(async()=>{
-        const existingMinutes=chartArchiveData?.minutes || {};
-        const existingDaily=chartArchiveData?.daily || {};
-        const updates={};
-
-        // 아직 움직이고 있는 마지막 1분봉은 저장하지 않는다.
-        // 완료된 봉만 저장해야 시초가 변경 시 현재 봉이 예전 값으로 고정되지 않는다.
-        const generatedMinutes=buildGeneratedMinute24HourCandles();
-        const completedMinutes=generatedMinutes.slice(
-          0,
-          Math.max(0,generatedMinutes.length-1)
-        );
-
-        for(const candle of completedMinutes){
-          const key=minuteArchiveKey(candle);
-          if(key && !existingMinutes[key]){
-            updates[`chartArchive/minutes/${key}`]=
-              minuteCandleForArchive(candle);
-          }
-        }
-
-        // 완료된 일봉만 저장한다. 진행 중인 일봉은 계속 움직이게 둔다.
-        const currentSessionKey=String(
-          marketState.sessionDate || kstParts().date
-        ).replaceAll("-","");
-
-        for(const candle of buildGeneratedDailyCandles()){
-          const key=dailyArchiveKey(candle);
-          if(!key || existingDaily[key]) continue;
-
-          const isCompleted=
-            key<currentSessionKey ||
-            (key===currentSessionKey && marketState.phase==="closed");
-
-          if(isCompleted){
-            updates[`chartArchive/daily/${key}`]=
-              dailyCandleForArchive(candle);
-          }
-        }
-
-        const count=Object.keys(updates).length;
-        if(count){
-          await writeChartArchiveUpdates(updates);
-          if(adminIsLoggedIn){
-            setAdminStatus(
-              `차트 봉 ${count.toLocaleString("ko-KR")}개를 Firebase에 고정했습니다.`
-            );
-          }
-        }
-      })().catch(error=>{
-        console.error("차트 봉 고정 실패",error);
-        if(adminIsLoggedIn){
-          setAdminStatus(
-            "차트 봉 고정 실패: 새 Firebase Rules를 적용했는지 확인하세요."
-          );
-        }
-      }).finally(()=>{
-        chartArchiveSyncPromise=null;
-      });
-
-      return chartArchiveSyncPromise;
+      return rebuildRecentDailyCandlesFromMinutes(mergedCandles);
     }
 
     function scheduleChartArchiveSync(){
@@ -3042,15 +2950,17 @@
       if(chartMode==="m1") return buildMinute24HourCandles();
       if(chartMode==="m5") return aggregateCandles(buildMinute24HourCandles(),5);
       if(chartMode==="m15") return aggregateCandles(buildMinute24HourCandles(),15);
-      const currentSession=String(
-        marketState.sessionDate || kstParts().date
-      );
+
+      const currentDate=String(kstParts().date);
       return buildDailyCandles()
-        .filter(candle=>
-          dateNumber(candle.sessionDate)<=dateNumber(currentSession)
-        )
-        .sort(
-          (a,b)=>dateNumber(a.sessionDate)-dateNumber(b.sessionDate)
+        .filter(candle=>{
+          const calendarDate=dailyCalendarDate(candle);
+          return calendarDate &&
+            dateNumber(calendarDate)<=dateNumber(currentDate);
+        })
+        .sort((a,b)=>
+          dateNumber(dailyCalendarDate(a))-
+          dateNumber(dailyCalendarDate(b))
         );
     }
 
@@ -3211,8 +3121,8 @@
 
       if(
         chartMode==="daily" &&
-        String(candle.sessionDate||"")===
-          String(marketState.sessionDate||"")
+        dailyCalendarDate(candle)===
+          String(kstParts().date)
       ){
         const livePrice=Math.max(
           1,
@@ -3353,11 +3263,11 @@
         .slice(startIndex,startIndex+maxVisible)
         .map(candle=>({...candle}));
 
-      // 현재 세션과 날짜가 일치하는 일봉을 찾아 실시간 현재가를 반영한다.
+      // 실제 오늘 날짜와 일치하는 일봉에만 실시간 현재가를 반영한다.
       if(chartMode==="daily" && candles.length){
-        const currentSession=String(marketState.sessionDate||"");
+        const currentDate=String(kstParts().date);
         const currentCandle=candles.find(candle=>
-          String(candle.sessionDate||"")===currentSession
+          dailyCalendarDate(candle)===currentDate
         );
 
         if(currentCandle){
