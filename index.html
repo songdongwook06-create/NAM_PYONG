@@ -2567,13 +2567,21 @@
       const sessionDate=String(
         marketState.sessionDate || kstParts().date
       );
+      const displayDate=String(kstParts().date);
       const groups=minuteCandlesBySession();
-
-      return dailyCandleFromActualMinutes(
+      const candle=dailyCandleFromActualMinutes(
         sessionDate,
         groups.get(sessionDate)||[],
         true
       );
+
+      // 내부 세션은 7월 20일로 유지하되,
+      // 자정을 넘긴 현재 일봉은 화면에 7월 21일로 표시한다.
+      return {
+        ...candle,
+        label:displayDate.slice(5),
+        fullLabel:displayDate
+      };
     }
 
     function rebuildRecentDailyCandlesFromMinutes(candles){
@@ -3139,9 +3147,7 @@
     function chartDateLabel(candle){
       const fullText=String(candle?.fullLabel || "");
       const sessionText=String(candle?.sessionDate || "");
-      const sourceText=chartMode==="daily"
-        ? (sessionText || fullText)
-        : (fullText || sessionText);
+      const sourceText=fullText || sessionText;
 
       let year="";
       let month="";
