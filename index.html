@@ -2802,7 +2802,7 @@
       const archived=archivedMinuteCandles();
 
       if(!archived.length){
-        return rebuildRecentDailyCandlesFromMinutes(generated);
+        return generated;
       }
 
       const merged=new Map();
