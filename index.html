@@ -2602,12 +2602,16 @@
       // 현재 세션은 분봉이 아직 한 개도 없어도 반드시 상단 현재가로 표시한다.
       merged.set(currentSession,liveCurrentDailyCandle());
 
+      const currentSessionNumber=dateNumber(currentSession);
+
       return [...merged.values()]
-        .filter(candle=>
-          /^\d{4}-\d{2}-\d{2}$/.test(
-            String(candle.sessionDate||"")
-          )
-        )
+        .filter(candle=>{
+          const sessionDate=String(candle.sessionDate||"");
+          return (
+            /^\d{4}-\d{2}-\d{2}$/.test(sessionDate) &&
+            dateNumber(sessionDate)<=currentSessionNumber
+          );
+        })
         .sort((a,b)=>
           dateNumber(a.sessionDate)-dateNumber(b.sessionDate)
         )
@@ -2656,9 +2660,13 @@
         liveCurrentDailyCandle()
       );
 
-      return [...mergedMap.values()].sort(
-        (a,b)=>dateNumber(a.sessionDate)-dateNumber(b.sessionDate)
-      );
+      return [...mergedMap.values()]
+        .filter(candle=>
+          dateNumber(candle.sessionDate)<=dateNumber(currentSession)
+        )
+        .sort(
+          (a,b)=>dateNumber(a.sessionDate)-dateNumber(b.sessionDate)
+        );
     }
 
     function minuteArchiveKey(candle){
@@ -3026,7 +3034,16 @@
       if(chartMode==="m1") return buildMinute24HourCandles();
       if(chartMode==="m5") return aggregateCandles(buildMinute24HourCandles(),5);
       if(chartMode==="m15") return aggregateCandles(buildMinute24HourCandles(),15);
-      return buildDailyCandles();
+      const currentSession=String(
+        marketState.sessionDate || kstParts().date
+      );
+      return buildDailyCandles()
+        .filter(candle=>
+          dateNumber(candle.sessionDate)<=dateNumber(currentSession)
+        )
+        .sort(
+          (a,b)=>dateNumber(a.sessionDate)-dateNumber(b.sessionDate)
+        );
     }
 
     function chartVisibleCount(){
@@ -3122,7 +3139,9 @@
     function chartDateLabel(candle){
       const fullText=String(candle?.fullLabel || "");
       const sessionText=String(candle?.sessionDate || "");
-      const sourceText=fullText || sessionText;
+      const sourceText=chartMode==="daily"
+        ? (sessionText || fullText)
+        : (fullText || sessionText);
 
       let year="";
       let month="";
@@ -3184,7 +3203,11 @@
       const sourceCandle=candles[index];
       const candle={...sourceCandle};
 
-      if(chartMode==="daily" && index===candles.length-1){
+      if(
+        chartMode==="daily" &&
+        String(candle.sessionDate||"")===
+          String(marketState.sessionDate||"")
+      ){
         const livePrice=Math.max(
           1,
           Math.round(
@@ -3324,33 +3347,36 @@
         .slice(startIndex,startIndex+maxVisible)
         .map(candle=>({...candle}));
 
-      // 현재 진행 중인 마지막 일봉에는 상단 현재가가 반드시 포함되어야 한다.
-      // 현재가가 89,720원이면 그 일봉의 최고가는 최소 89,720원이어야 한다.
+      // 현재 세션과 날짜가 일치하는 일봉을 찾아 실시간 현재가를 반영한다.
       if(chartMode==="daily" && candles.length){
-        const latest=candles.at(-1);
-        const livePrice=Math.max(
-          1,
-          Math.round(
-            Number(marketState.price||latest.close)||1
-          )
+        const currentSession=String(marketState.sessionDate||"");
+        const currentCandle=candles.find(candle=>
+          String(candle.sessionDate||"")===currentSession
         );
 
-        latest.close=livePrice;
-        latest.high=Math.max(
-          livePrice,
-          Number(latest.high)||livePrice,
-          Number(latest.open)||livePrice,
-          Number(latest.close)||livePrice
-        );
-        latest.low=Math.max(
-          1,
-          Math.min(
+        if(currentCandle){
+          const livePrice=Math.max(
+            1,
+            Math.round(
+              Number(marketState.price||currentCandle.close)||1
+            )
+          );
+
+          currentCandle.close=livePrice;
+          currentCandle.high=Math.max(
             livePrice,
-            Number(latest.low)||livePrice,
-            Number(latest.open)||livePrice,
-            Number(latest.close)||livePrice
-          )
-        );
+            Number(currentCandle.high)||livePrice,
+            Number(currentCandle.open)||livePrice
+          );
+          currentCandle.low=Math.max(
+            1,
+            Math.min(
+              livePrice,
+              Number(currentCandle.low)||livePrice,
+              Number(currentCandle.open)||livePrice
+            )
+          );
+        }
       }
 
       const slotCount=chartMode==="daily"
