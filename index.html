@@ -437,6 +437,12 @@
       .max-order-copy small{font-size:10px}
       #maxOrderButton{padding:10px 9px;font-size:11px}
     }
+
+    /* 검은 배경 + 빨강/파랑 캔들만 적용 */
+    .chart-plot{
+      background:#131722 !important;
+      border-color:#2a2e39 !important;
+    }
   </style>
 </head>
 <body>
@@ -3177,7 +3183,7 @@
 
       context.save();
 
-      context.strokeStyle="rgba(139,149,161,.72)";
+      context.strokeStyle="rgba(190,198,210,.62)";
       context.lineWidth=1;
       context.setLineDash([4,4]);
       context.beginPath();
@@ -3199,7 +3205,7 @@
       const pillX=Math.max(6,Math.min(width-pillWidth-6,x-pillWidth/2));
       const pillY=Math.max(top+5,priceBottom-pillHeight-6);
 
-      context.fillStyle="rgba(25,31,40,.96)";
+      context.fillStyle="rgba(19,23,34,.97)";
       roundedRectPath(context,pillX,pillY,pillWidth,pillHeight,9);
       context.fill();
       context.strokeStyle="rgba(255,255,255,.12)";
@@ -3231,6 +3237,8 @@
       const width=rect.width;
       const height=rect.height;
       context.clearRect(0,0,width,height);
+      context.fillStyle="#131722";
+      context.fillRect(0,0,width,height);
 
       const allCandles=activeChartCandles();
       $("emptyText").style.display=allCandles.length?"none":"flex";
@@ -3280,13 +3288,13 @@
       for(let i=0;i<=4;i++){
         const y=top+priceHeight*(i/4);
         const price=max-(max-min)*(i/4);
-        context.strokeStyle="#e8ebed";
+        context.strokeStyle="#2a2e39";
         context.beginPath();
         context.moveTo(left,y);
         context.lineTo(width-right,y);
         context.stroke();
 
-        context.fillStyle="#8b95a1";
+        context.fillStyle="#8a94a6";
         context.textAlign="left";
         context.fillText(Math.round(price).toLocaleString("ko-KR"),width-right+7,y+4);
       }
@@ -3302,7 +3310,7 @@
           const localIndex=candles.findIndex(c=>c.label===boundary.label);
           if(localIndex<0) continue;
           const x=left+(leadingSlots+localIndex+.5)*slot;
-          context.strokeStyle="#c4c9d0";
+          context.strokeStyle="#596273";
           context.setLineDash([4,4]);
           context.beginPath();
           context.moveTo(x,top);
@@ -3310,7 +3318,7 @@
           context.stroke();
           context.setLineDash([]);
           if(slot>1.4){
-            context.fillStyle="#8b95a1";
+            context.fillStyle="#8a94a6";
             context.textAlign="center";
             context.fillText(boundary.text,x+24,top+12);
           }
@@ -3322,7 +3330,7 @@
       candles.forEach((c,index)=>{
         const x=left+(leadingSlots+index+.5)*slot;
         const isUp=c.close>=c.open;
-        const color=isUp?"#ff4d5a":"#4d9cff";
+        const color=isUp?"#f23645":"#2962ff";
         const openY=yForPrice(c.open);
         const closeY=yForPrice(c.close);
         const highY=yForPrice(c.high);
@@ -3339,11 +3347,12 @@
 
         const bodyTop=Math.min(openY,closeY);
         const bodyHeight=Math.max(1.5,Math.abs(closeY-openY));
-        if(isUp){
-          context.fillRect(x-candleWidth/2,bodyTop,candleWidth,bodyHeight);
-        }else{
-          context.strokeRect(x-candleWidth/2,bodyTop,candleWidth,bodyHeight);
-        }
+        context.fillRect(
+          x-candleWidth/2,
+          bodyTop,
+          candleWidth,
+          bodyHeight
+        );
       });
 
       // 거래량
@@ -3360,7 +3369,7 @@
       );
       const volumeText=`거래량 ${formatChartVolume(selectedVolume)}`;
 
-      context.strokeStyle="#e8ebed";
+      context.strokeStyle="#2a2e39";
       context.lineWidth=1;
       context.beginPath();
       context.moveTo(left,volumeTop-6);
@@ -3393,7 +3402,7 @@
       context.textBaseline="alphabetic";
 
       // 우측 거래량 눈금
-      context.fillStyle="#8b95a1";
+      context.fillStyle="#8a94a6";
       context.font="10px -apple-system,BlinkMacSystemFont,Segoe UI,sans-serif";
       context.textAlign="left";
       context.fillText(
@@ -3412,8 +3421,8 @@
         );
         const isUp=c.close>=c.open;
         context.fillStyle=isUp
-          ? "rgba(240,68,82,.46)"
-          : "rgba(49,130,246,.46)";
+          ? "rgba(242,54,69,.48)"
+          : "rgba(41,98,255,.48)";
         context.fillRect(
           x-volumeBarWidth/2,
           volumeBottom-barHeight,
@@ -3454,7 +3463,7 @@
       // 시간축
       const labelIndexes=[0,Math.floor((candles.length-1)/2),candles.length-1]
         .filter((v,i,a)=>v>=0 && a.indexOf(v)===i);
-      context.fillStyle="#8b95a1";
+      context.fillStyle="#8a94a6";
       context.textAlign="center";
       for(const index of labelIndexes){
         const x=left+(leadingSlots+index+.5)*slot;
