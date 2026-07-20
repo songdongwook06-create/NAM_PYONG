@@ -3181,7 +3181,32 @@
       const rawIndex=
         Math.floor((localX-left)/Math.max(slot,0.0001))-leadingSlots;
       const index=Math.max(0,Math.min(candles.length-1,rawIndex));
-      const candle=candles[index];
+      const sourceCandle=candles[index];
+      const candle={...sourceCandle};
+
+      if(chartMode==="daily" && index===candles.length-1){
+        const livePrice=Math.max(
+          1,
+          Math.round(
+            Number(marketState.price||candle.close)||1
+          )
+        );
+        candle.close=livePrice;
+        candle.high=Math.max(
+          livePrice,
+          Number(candle.high)||livePrice,
+          Number(candle.open)||livePrice
+        );
+        candle.low=Math.max(
+          1,
+          Math.min(
+            livePrice,
+            Number(candle.low)||livePrice,
+            Number(candle.open)||livePrice
+          )
+        );
+      }
+
       const x=left+(leadingSlots+index+.5)*slot;
       const closeY=yForPrice(candle.close);
       const highY=yForPrice(candle.high);
@@ -3295,7 +3320,39 @@
       const maxVisible=Math.min(allCandles.length,requestedVisible);
       const startIndex=currentChartStart(allCandles);
       chartViewStart[chartMode]=chartViewStart[chartMode]==null ? null : startIndex;
-      const candles=allCandles.slice(startIndex,startIndex+maxVisible);
+      const candles=allCandles
+        .slice(startIndex,startIndex+maxVisible)
+        .map(candle=>({...candle}));
+
+      // 현재 진행 중인 마지막 일봉에는 상단 현재가가 반드시 포함되어야 한다.
+      // 현재가가 89,720원이면 그 일봉의 최고가는 최소 89,720원이어야 한다.
+      if(chartMode==="daily" && candles.length){
+        const latest=candles.at(-1);
+        const livePrice=Math.max(
+          1,
+          Math.round(
+            Number(marketState.price||latest.close)||1
+          )
+        );
+
+        latest.close=livePrice;
+        latest.high=Math.max(
+          livePrice,
+          Number(latest.high)||livePrice,
+          Number(latest.open)||livePrice,
+          Number(latest.close)||livePrice
+        );
+        latest.low=Math.max(
+          1,
+          Math.min(
+            livePrice,
+            Number(latest.low)||livePrice,
+            Number(latest.open)||livePrice,
+            Number(latest.close)||livePrice
+          )
+        );
+      }
+
       const slotCount=chartMode==="daily"
         ? Math.max(1,requestedVisible)
         : Math.max(1,candles.length);
